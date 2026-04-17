@@ -25,7 +25,6 @@ import '../../../providers/room_alias_provider.dart';
 import '../../../providers/room_runtime_provider.dart';
 import '../../../providers/room_service_provider.dart';
 import '../../../providers/service_icon_positions_provider.dart';
-import 'combined_room_control_dialog.dart';
 
 class LightingDialog extends ConsumerStatefulWidget {
   const LightingDialog({super.key, required this.room});
@@ -55,6 +54,16 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
   final Map<String, String> _deviceSubmitStatus = {};
   int? _lastTriggeredScene;
   bool _isEditMode = false;
+  late double _setPoint;
+  late bool _isOn;
+  late int _mode;
+  late int _fanMode;
+  late double _initialSetPoint;
+  late bool _initialIsOn;
+  late int _initialMode;
+  late int _initialFanMode;
+  bool _savingHvac = false;
+  bool _loadingHvac = false;
   final GlobalKey _layoutStackKey = GlobalKey();
   final Map<String, Offset> _dragCanvasPositions = <String, Offset>{};
   String? _draggingKey;
@@ -103,6 +112,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
 
   Future<void> _init() async {
     _attachRoomRuntimeListeners();
+    _hydrateHvacFromRoom(_latestRoom);
     await ref.read(lightingDevicesProvider.notifier).ensureConfigLoaded();
     if (ref.read(roomSnapshotProvider(widget.room.number)).snapshot == null) {
       await ref
@@ -184,6 +194,9 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
           return;
         }
         setState(() {});
+        if (!_hasHvacChanges) {
+          _hydrateHvacFromRoom(next);
+        }
       },
     );
     final currentLighting = ref.read(
@@ -194,6 +207,109 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
       _warningMessage = null;
       _updateDeviceControllers();
     }
+  }
+
+  void _hydrateHvacFromRoom(RoomData room) {
+    final detail = room.hvacDetail;
+    _setPoint = detail?.setPoint ?? 22.0;
+    _isOn = (detail?.onOff ?? (room.hvac == HvacStatus.off ? 0 : 1)) == 1;
+    _mode = _normalizeMode(detail?.mode);
+    _fanMode = _normalizeFanMode(detail?.fanMode);
+    _initialSetPoint = _setPoint;
+    _initialIsOn = _isOn;
+    _initialMode = _mode;
+    _initialFanMode = _fanMode;
+  }
+
+  int _normalizeMode(int? raw) {
+    final value = raw ?? 0;
+    if (value >= 0 && value <= 3) return value;
+    return 0;
+  }
+
+  int _normalizeFanMode(int? raw) {
+    final value = raw ?? 4;
+    if (value >= 1 && value <= 4) return value;
+    return 4;
+  }
+
+  bool get _hasHvacChanges {
+    final setPointChanged = (_setPoint - _initialSetPoint).abs() >= 0.1;
+    return _isOn != _initialIsOn ||
+        setPointChanged ||
+        _mode != _initialMode ||
+        _fanMode != _initialFanMode;
+  }
+
+  String get _modeLabel {
+    switch (_mode) {
+      case 0:
+        return 'Heat';
+      case 1:
+        return 'Cool';
+      case 2:
+        return 'Fan Only';
+      case 3:
+        return 'Auto';
+      default:
+        return 'Heat';
+    }
+  }
+
+  String get _fanLabel {
+    switch (_fanMode) {
+      case 1:
+        return 'Low';
+      case 2:
+        return 'Medium';
+      case 3:
+        return 'High';
+      default:
+        return 'Auto';
+    }
+  }
+
+  Future<void> _refreshHvacFromBackend() async {
+    setState(() => _loadingHvac = true);
+    await ref
+        .read(roomSnapshotProvider(widget.room.number).notifier)
+        .refreshNow();
+    if (!mounted) {
+      return;
+    }
+    final refreshed = ref.read(roomRuntimeRoomViewProvider(widget.room.number));
+    if (refreshed != null && !_hasHvacChanges) {
+      _hydrateHvacFromRoom(refreshed);
+    }
+    setState(() => _loadingHvac = false);
+  }
+
+  Future<void> _saveHvac() async {
+    setState(() => _savingHvac = true);
+    final notifier = ref.read(hotelStatusProvider.notifier);
+    final result = await notifier.updateHvac(widget.room.number, {
+      'onOff': _isOn ? 1 : 0,
+      'setPoint': _setPoint.toStringAsFixed(1),
+      'mode': _mode,
+      'fanMode': _fanMode,
+    });
+    if (!mounted) {
+      return;
+    }
+    setState(() => _savingHvac = false);
+    if (result is Failure<void>) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update HVAC: ${result.error.message}')),
+      );
+      return;
+    }
+    setState(() {
+      _initialSetPoint = _setPoint;
+      _initialIsOn = _isOn;
+      _initialMode = _mode;
+      _initialFanMode = _fanMode;
+    });
+    unawaited(_refreshHvacFromBackend());
   }
 
   List<LightingDeviceSummary> _buildMergedDevices() {
@@ -340,14 +456,14 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     final isAdmin = authState.user?.role == UserRole.admin;
     final isViewer = authState.user?.role == UserRole.viewer;
     final showVisualLayout = isViewer || isAdmin;
-    final dialogWidth = MediaQuery.of(context).size.width * 0.88;
+    final dialogWidth = math.min(MediaQuery.of(context).size.width * 0.96, 1880.0);
     final isCompactTablet = dialogWidth < 1150;
 
     return Dialog(
       backgroundColor: Colors.transparent,
       child: Container(
         width: dialogWidth,
-        height: MediaQuery.of(context).size.height * 0.82,
+        height: math.min(MediaQuery.of(context).size.height * 0.9, 980.0),
         decoration: BoxDecoration(
           color: const Color(0xFF1E1E1E),
           borderRadius: BorderRadius.circular(16),
@@ -375,20 +491,6 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
         ),
       ),
     );
-  }
-
-  void _switchToCombinedRoomDialog() {
-    final rootNavigator = Navigator.of(context, rootNavigator: true);
-    final dialogContext = rootNavigator.context;
-    final room = _latestRoom;
-
-    rootNavigator.pop();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      showDialog<void>(
-        context: dialogContext,
-        builder: (context) => CombinedRoomControlDialog(room: room),
-      );
-    });
   }
 
   Widget _buildHeader({required bool isViewer, required bool isAdmin}) {
@@ -423,12 +525,6 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              OutlinedButton.icon(
-                onPressed: _switchToCombinedRoomDialog,
-                icon: const Icon(Icons.tune, size: 18),
-                label: const Text('Room Control Center'),
-              ),
-              const SizedBox(width: 8),
               IconButton(
                 icon: const Icon(Icons.close, color: Colors.white),
                 onPressed: () => Navigator.pop(context),
@@ -452,7 +548,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
                 '${device.type.name}-${device.address}' == _activeDeviceKey,
             orElse: () => mergedDevices.first,
           );
-    final sideFlex = isCompactTablet ? 2 : 1;
+    final sideFlex = isCompactTablet ? 4 : 3;
 
     final room = _latestRoom;
     final effectiveBackendRoomNumber = ref.read(
@@ -472,7 +568,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     return Row(
       children: [
         Expanded(
-          flex: 6,
+          flex: 7,
           child: Container(
             margin: const EdgeInsets.fromLTRB(20, 8, 16, 20),
             padding: const EdgeInsets.all(12),
@@ -536,100 +632,500 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
           flex: sideFlex,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(8, 8, 20, 20),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_warningMessage != null)
-                    Text(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_warningMessage != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
                       _warningMessage!,
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.amber.shade300,
                       ),
                     ),
-                  const SizedBox(height: 12),
-                  _buildSceneControlCard(),
-                  if (isAdmin) ...[
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Device Control',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    if (activeDevice != null)
-                      _buildDeviceCard(
-                        activeDevice,
-                        canControl: true,
-                        compact: true,
-                      )
-                    else
-                      Text(
-                        'No devices available',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.65),
-                          fontSize: 12,
+                  ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: Row(
+                          children: [
+                            Expanded(child: _buildSceneControlCard()),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _buildLightingDevicesCard(
+                                activeDevice: activeDevice,
+                                isAdmin: isAdmin,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Power Consumption: ${_formatPowerConsumption(activeDevice)}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.white.withOpacity(0.75),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      value: _isEditMode,
-                      title: const Text(
-                        'Edit Positions',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                      subtitle: Text(
-                        _isEditMode
-                            ? 'Drag pins or use arrow keys for fine movement.'
-                            : 'Turn on to move lighting devices.',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.65),
-                          fontSize: 12,
+                      const SizedBox(height: 10),
+                      Expanded(
+                        flex: 7,
+                        child: Row(
+                          children: [
+                            Expanded(child: _buildHvacCard(room)),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _buildServiceCard(room, serviceEntries),
+                            ),
+                          ],
                         ),
                       ),
-                      onChanged: (value) {
-                        setState(() {
-                          _isEditMode = value;
-                          if (!value) {
-                            _dragCanvasPositions.clear();
-                            _draggingKey = null;
-                            _keyboardPersistTimer?.cancel();
-                            _layoutFocusNode.unfocus();
-                          } else {
-                            _layoutFocusNode.requestFocus();
-                          }
-                        });
-                      },
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  if (_errorMessage != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      _errorMessage!,
-                      style: const TextStyle(color: Colors.redAccent),
-                    ),
-                  ],
+                    ],
+                  ),
+                ),
+                if (_errorMessage != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _errorMessage!,
+                    style: const TextStyle(color: Colors.redAccent),
+                  ),
                 ],
-              ),
+              ],
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildLightingDevicesCard({
+    required LightingDeviceSummary? activeDevice,
+    required bool isAdmin,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Lighting Devices',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (activeDevice != null)
+            _buildDeviceCard(
+              activeDevice,
+              canControl: isAdmin,
+              compact: true,
+            )
+          else
+            Text(
+              'No devices available',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.65),
+                fontSize: 12,
+              ),
+            ),
+          const SizedBox(height: 8),
+          Text(
+            'Power Consumption: ${_formatPowerConsumption(activeDevice)}',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withOpacity(0.75),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (isAdmin) ...[
+            const SizedBox(height: 8),
+            SwitchListTile(
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              value: _isEditMode,
+              title: const Text(
+                'Edit Positions',
+                style: TextStyle(color: Colors.white),
+              ),
+              subtitle: Text(
+                _isEditMode
+                    ? 'Drag pins or use arrow keys for fine movement.'
+                    : 'Move lighting and service pins.',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.65),
+                  fontSize: 11,
+                ),
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _isEditMode = value;
+                  if (!value) {
+                    _dragCanvasPositions.clear();
+                    _draggingKey = null;
+                    _keyboardPersistTimer?.cancel();
+                    _layoutFocusNode.unfocus();
+                  } else {
+                    _layoutFocusNode.requestFocus();
+                  }
+                });
+              },
+              contentPadding: EdgeInsets.zero,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHvacCard(RoomData room) {
+    final detail = room.hvacDetail;
+    final running = (detail?.onOff ?? (room.hvac == HvacStatus.off ? 0 : 1)) == 1;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'HVAC Control',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+          if (_loadingHvac) ...[
+            const SizedBox(height: 8),
+            const LinearProgressIndicator(minHeight: 2),
+          ],
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _buildStatChip(
+                  'Room Temp',
+                  detail?.roomTemperature != null
+                      ? '${detail!.roomTemperature!.toStringAsFixed(1)} C'
+                      : '-',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(child: _buildStatChip('Running', running ? 'On' : 'Off')),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: _buildStatChip('Mode', _modeLabel)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildStatChip('Fan', _fanLabel)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Power',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Switch(
+                value: _isOn,
+                onChanged: (value) => setState(() => _isOn = value),
+              ),
+            ],
+          ),
+          Text(
+            'Set Point: ${_setPoint.toStringAsFixed(1)} C',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Slider(
+            value: _setPoint.clamp(16.0, 30.0),
+            min: 16,
+            max: 30,
+            divisions: 28,
+            label: _setPoint.toStringAsFixed(1),
+            onChanged: (value) => setState(() => _setPoint = value),
+          ),
+          DropdownButtonFormField<int>(
+            value: _mode,
+            decoration: const InputDecoration(labelText: 'Mode', isDense: true),
+            items: const [
+              DropdownMenuItem(value: 0, child: Text('Heat')),
+              DropdownMenuItem(value: 1, child: Text('Cool')),
+              DropdownMenuItem(value: 2, child: Text('Fan Only')),
+              DropdownMenuItem(value: 3, child: Text('Auto')),
+            ],
+            onChanged: (value) => setState(() => _mode = _normalizeMode(value)),
+          ),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<int>(
+            value: _fanMode,
+            decoration: const InputDecoration(labelText: 'Fan', isDense: true),
+            items: const [
+              DropdownMenuItem(value: 1, child: Text('Low')),
+              DropdownMenuItem(value: 2, child: Text('Medium')),
+              DropdownMenuItem(value: 3, child: Text('High')),
+              DropdownMenuItem(value: 4, child: Text('Auto')),
+            ],
+            onChanged: (value) =>
+                setState(() => _fanMode = _normalizeFanMode(value)),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              OutlinedButton(
+                onPressed: _savingHvac ? null : _refreshHvacFromBackend,
+                child: const Text('Refresh'),
+              ),
+              const Spacer(),
+              ElevatedButton(
+                onPressed: (_savingHvac || !_hasHvacChanges) ? null : _saveHvac,
+                child: Text(_savingHvac ? 'Saving...' : 'Save'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildServiceCard(RoomData room, List<RoomServiceEntry> entries) {
+    RoomServiceEntry? latest(ServiceType type) {
+      for (final entry in entries) {
+        if (entry.serviceType == type) return entry;
+      }
+      return null;
+    }
+
+    final dndEntry = latest(ServiceType.dnd);
+    final murEntry = latest(ServiceType.mur);
+    final laundryEntry = latest(ServiceType.laundry);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Service Control',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _serviceIconTile(
+                label: 'DND',
+                iconPath: _serviceIconForState(
+                  ServiceType.dnd,
+                  dndEntry?.serviceState ?? room.dnd.label,
+                ),
+              ),
+              const SizedBox(width: 6),
+              _serviceIconTile(
+                label: 'MUR',
+                iconPath: _serviceIconForState(
+                  ServiceType.mur,
+                  murEntry?.serviceState ?? room.mur.label,
+                ),
+              ),
+              const SizedBox(width: 6),
+              _serviceIconTile(
+                label: 'Laundry',
+                iconPath: _serviceIconForState(
+                  ServiceType.laundry,
+                  laundryEntry?.serviceState ?? room.laundry.label,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _serviceRow(
+            title: 'DND',
+            entry: dndEntry,
+            fallbackState: room.dnd.label,
+            allowAck: false,
+          ),
+          const SizedBox(height: 8),
+          _serviceRow(
+            title: 'MUR',
+            entry: murEntry,
+            fallbackState: room.mur.label,
+            allowAck: true,
+          ),
+          const SizedBox(height: 8),
+          _serviceRow(
+            title: 'Laundry',
+            entry: laundryEntry,
+            fallbackState: room.laundry.label,
+            allowAck: true,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _serviceRow({
+    required String title,
+    required RoomServiceEntry? entry,
+    required String fallbackState,
+    required bool allowAck,
+  }) {
+    final stateText = entry?.serviceState ?? fallbackState;
+    final timestampText = entry?.activationTime ?? '-';
+    final canToggle =
+        allowAck &&
+        entry != null &&
+        entry.acknowledgement != ServiceAcknowledgement.none;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$title: $stateText',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  timestampText,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.white.withOpacity(0.6),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (canToggle)
+            InkWell(
+              onTap: () => ref
+                  .read(roomServiceProvider.notifier)
+                  .toggleAcknowledgement(entry.id),
+              borderRadius: BorderRadius.circular(6),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(6),
+                  color:
+                      entry.acknowledgement == ServiceAcknowledgement.acknowledged
+                      ? Colors.green.withOpacity(0.18)
+                      : Colors.red.withOpacity(0.18),
+                ),
+                child: Text(
+                  entry.acknowledgement.label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color:
+                        entry.acknowledgement ==
+                            ServiceAcknowledgement.acknowledged
+                        ? Colors.greenAccent
+                        : Colors.redAccent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            )
+          else
+            Text('-', style: TextStyle(color: Colors.white.withOpacity(0.6))),
+        ],
+      ),
+    );
+  }
+
+  Widget _serviceIconTile({
+    required String label,
+    required String iconPath,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.04),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.white.withOpacity(0.08)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(iconPath, width: 16, height: 16, fit: BoxFit.contain),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 9.5, color: Colors.white),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatChip(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.white.withOpacity(0.65),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -667,7 +1163,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
             children: scenes.entries.map((entry) {
               final isSelected = _lastTriggeredScene == entry.key;
               return SizedBox(
-                width: 112,
+                width: 104,
                 child: FilledButton.tonal(
                   onPressed: () => _triggerScene(entry.key),
                   style: FilledButton.styleFrom(

@@ -16,7 +16,6 @@ import '../providers/room_alias_provider.dart';
 import '../providers/room_runtime_provider.dart';
 import '../models/service_models.dart';
 import '../models/api_result.dart';
-import 'hotel_status/widgets/combined_room_control_dialog.dart';
 import 'hotel_status/widgets/lighting_dialog.dart';
 import '../utils/timestamped_debug_log.dart';
 
@@ -209,8 +208,7 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
                         showLighting: _showLighting,
                         showHVAC: _showHVAC,
                         showRoomService: _showRoomService,
-                        onCardTap: () =>
-                            _showCombinedRoomControlDialog(visibleRooms[index]),
+                        onCardTap: () => _showLightingDialog(visibleRooms[index]),
                         onLightingTap: () =>
                             _showLightingDialog(visibleRooms[index]),
                         onHVACTap: () => _showHVACDialog(visibleRooms[index]),
@@ -507,13 +505,6 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
     showDialog(
       context: context,
       builder: (context) => _HvacDialog(room: room),
-    );
-  }
-
-  void _showCombinedRoomControlDialog(RoomData room) {
-    showDialog(
-      context: context,
-      builder: (context) => CombinedRoomControlDialog(room: room),
     );
   }
 
