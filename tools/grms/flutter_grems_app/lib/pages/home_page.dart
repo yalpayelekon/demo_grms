@@ -25,6 +25,21 @@ class _HomePageState extends ConsumerState<HomePage> {
   bool _hasMovedSignificantly = false;
   bool _zoneEditMode = false;
   final double _dragThreshold = 6.0;
+  static const BoxFit _mapFit = BoxFit.contain;
+
+  Rect _resolveMapRect(BoxConstraints constraints) {
+    final sourceSize = const Size(1920, 1080);
+    final destinationSize = Size(constraints.maxWidth, constraints.maxHeight);
+    final fitted = applyBoxFit(_mapFit, sourceSize, destinationSize);
+    final dx = (destinationSize.width - fitted.destination.width) / 2;
+    final dy = (destinationSize.height - fitted.destination.height) / 2;
+    return Rect.fromLTWH(
+      dx,
+      dy,
+      fitted.destination.width,
+      fitted.destination.height,
+    );
+  }
 
   void _setZoneEditMode(bool enabled) {
     setState(() {
@@ -57,13 +72,14 @@ class _HomePageState extends ConsumerState<HomePage> {
       return;
     }
 
+    final mapRect = _resolveMapRect(constraints);
     final delta = globalPosition - _dragStartPointerPos!;
     if (!_hasMovedSignificantly && delta.distance > _dragThreshold) {
       _hasMovedSignificantly = true;
     }
 
-    final mapDeltaX = (delta.dx / constraints.maxWidth) * _mapOriginalWidth;
-    final mapDeltaY = (delta.dy / constraints.maxHeight) * _mapOriginalHeight;
+    final mapDeltaX = (delta.dx / mapRect.width) * _mapOriginalWidth;
+    final mapDeltaY = (delta.dy / mapRect.height) * _mapOriginalHeight;
 
     final newX = (_dragStartZonePos!.dx + mapDeltaX).clamp(
       0.0,
@@ -114,9 +130,14 @@ class _HomePageState extends ConsumerState<HomePage> {
       return;
     }
 
+    final mapRect = _resolveMapRect(constraints);
     final tap = details.localPosition;
-    final mapX = (tap.dx / constraints.maxWidth) * _mapOriginalWidth;
-    final mapY = (tap.dy / constraints.maxHeight) * _mapOriginalHeight;
+    final tapInMap = Offset(
+      (tap.dx - mapRect.left).clamp(0.0, mapRect.width),
+      (tap.dy - mapRect.top).clamp(0.0, mapRect.height),
+    );
+    final mapX = (tapInMap.dx / mapRect.width) * _mapOriginalWidth;
+    final mapY = (tapInMap.dy / mapRect.height) * _mapOriginalHeight;
     final resolvedZone = _resolveZoneFromMapPoint(data, mapX, mapY);
     if (resolvedZone == null) {
       return;
@@ -161,57 +182,48 @@ class _HomePageState extends ConsumerState<HomePage> {
                 aspectRatio: _mapOriginalWidth / _mapOriginalHeight,
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final isWide = constraints.maxWidth > 1000;
-                    final scale = isWide ? 1.12 : 1.0;
+                    final mapRect = _resolveMapRect(constraints);
 
                     return ClipRect(
-                      child: Transform.scale(
-                        scale: scale,
-                        alignment: Alignment.center,
-                        child: Stack(
-                          key: _mapKey,
-                          children: [
-                            // 1. Background Image
-                            Image.asset(
-                              'assets/images/serenity_hotel_view.png',
-                              width: constraints.maxWidth,
-                              height: constraints.maxHeight,
-                              fit:
-                                  BoxConstraints.expand().biggest ==
-                                      constraints.biggest
-                                  ? BoxFit.cover
-                                  : BoxFit.contain,
-                            ),
-                            Positioned.fill(
-                              child: GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onTapUp: (details) => _handleMapTap(
-                                  context,
-                                  data,
-                                  constraints,
-                                  details,
-                                ),
+                      child: Stack(
+                        key: _mapKey,
+                        children: [
+                          // 1. Background Image
+                          Image.asset(
+                            'assets/images/serenity_hotel_view.png',
+                            width: constraints.maxWidth,
+                            height: constraints.maxHeight,
+                            fit: _mapFit,
+                          ),
+                          Positioned.fill(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTapUp: (details) => _handleMapTap(
+                                context,
+                                data,
+                                constraints,
+                                details,
                               ),
                             ),
-                            // 3. Labels Layer
-                            ...data.homePageBlockButtons.asMap().entries.map((
-                              entry,
-                            ) {
-                              final index = entry.key;
-                              final btn = entry.value;
-                              return _buildZoneLabel(
-                                context,
-                                index,
-                                btn,
-                                constraints,
-                                isAdmin,
-                                zoneCounts[btn.buttonName]?.alarms ?? 0,
-                                zoneCounts[btn.buttonName]?.delayedServices ??
-                                    0,
-                              );
-                            }),
-                          ],
-                        ),
+                          ),
+                          // 3. Labels Layer
+                          ...data.homePageBlockButtons.asMap().entries.map((
+                            entry,
+                          ) {
+                            final index = entry.key;
+                            final btn = entry.value;
+                            return _buildZoneLabel(
+                              context,
+                              index,
+                              btn,
+                              mapRect,
+                              constraints,
+                              isAdmin,
+                              zoneCounts[btn.buttonName]?.alarms ?? 0,
+                              zoneCounts[btn.buttonName]?.delayedServices ?? 0,
+                            );
+                          }),
+                        ],
                       ),
                     );
                   },
@@ -257,6 +269,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     BuildContext context,
     int index,
     ZoneButton btn,
+    Rect mapRect,
     BoxConstraints constraints,
     bool isAdmin,
     int alarmCount,
@@ -265,8 +278,8 @@ class _HomePageState extends ConsumerState<HomePage> {
     final xPercent = btn.xCoordinate / _mapOriginalWidth;
     final yPercent = btn.yCoordinate / _mapOriginalHeight;
 
-    final left = xPercent * constraints.maxWidth;
-    final top = yPercent * constraints.maxHeight;
+    final left = mapRect.left + (xPercent * mapRect.width);
+    final top = mapRect.top + (yPercent * mapRect.height);
 
     final isDragging = _draggingIndex == index;
     final tooltipText =

@@ -43,7 +43,7 @@ class Preferences {
   Preferences({
     this.dateFormat = DateFormat.mmmDdYyyy,
     this.timeFormat = TimeFormat.h12,
-    this.city = 'Antalya',
+    this.city = 'Copenhagen',
   });
 
   Preferences copyWith({
@@ -59,31 +59,25 @@ class Preferences {
   }
 
   Map<String, dynamic> toJson() => {
-        'dateFormat': dateFormat.label,
-        'timeFormat': timeFormat.label,
-        'city': city,
-      };
+    'dateFormat': dateFormat.label,
+    'timeFormat': timeFormat.label,
+    'city': city,
+  };
 
   factory Preferences.fromJson(Map<String, dynamic> json) => Preferences(
-        dateFormat: DateFormat.fromString(json['dateFormat'] as String? ?? ''),
-        timeFormat: TimeFormat.fromString(json['timeFormat'] as String? ?? ''),
-        city: json['city'] as String? ?? 'Antalya',
-      );
+    dateFormat: DateFormat.fromString(json['dateFormat'] as String? ?? ''),
+    timeFormat: TimeFormat.fromString(json['timeFormat'] as String? ?? ''),
+    city: json['city'] as String? ?? 'Copenhagen',
+  );
 }
 
 class PreferencesState {
   final Preferences preferences;
   final bool isInitialized;
 
-  PreferencesState({
-    required this.preferences,
-    this.isInitialized = false,
-  });
+  PreferencesState({required this.preferences, this.isInitialized = false});
 
-  PreferencesState copyWith({
-    Preferences? preferences,
-    bool? isInitialized,
-  }) {
+  PreferencesState copyWith({Preferences? preferences, bool? isInitialized}) {
     return PreferencesState(
       preferences: preferences ?? this.preferences,
       isInitialized: isInitialized ?? this.isInitialized,
@@ -126,7 +120,7 @@ class PreferencesNotifier extends Notifier<PreferencesState> {
       city: city,
     );
     state = state.copyWith(preferences: updatedPreferences);
-    
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_storageKey, jsonEncode(updatedPreferences.toJson()));
   }
@@ -134,11 +128,13 @@ class PreferencesNotifier extends Notifier<PreferencesState> {
   Future<void> resetPreferences() async {
     final defaultPreferences = Preferences();
     state = state.copyWith(preferences: defaultPreferences);
-    
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_storageKey);
   }
 }
 
-final preferencesProvider = NotifierProvider<PreferencesNotifier, PreferencesState>(PreferencesNotifier.new);
-
+final preferencesProvider =
+    NotifierProvider<PreferencesNotifier, PreferencesState>(
+      PreferencesNotifier.new,
+    );

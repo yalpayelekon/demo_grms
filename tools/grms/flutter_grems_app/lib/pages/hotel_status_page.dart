@@ -253,39 +253,30 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
                     const SizedBox(width: 12),
                     Text(
                       syncStatus.message!,
-                      style: const TextStyle(color: Colors.orangeAccent),
+                      style: const TextStyle(
+                        color: Colors.orangeAccent,
+                        fontSize: 13,
+                      ),
                     ),
                   ],
                 ],
               ),
             ),
-          Row(
-            children: [
-              _buildCheckbox(
-                'Lighting',
-                _showLighting,
-                (v) => setState(() => _showLighting = v!),
-              ),
-              const SizedBox(width: 16),
-              _buildCheckbox(
-                'HVAC',
-                _showHVAC,
-                (v) => setState(() => _showHVAC = v!),
-              ),
-              const SizedBox(width: 16),
-              _buildCheckbox(
-                'Room Service',
-                _showRoomService,
-                (v) => setState(() => _showRoomService = v!),
-              ),
-              const Spacer(),
-              _buildDropdown(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compactControls = constraints.maxWidth < 1400;
+              final isTabletControls = constraints.maxWidth < 1260;
+              final zoneDropdown = _buildDropdown(
                 value: _selectedZoneId,
+                compact: compactControls,
                 items: zones
                     .map(
                       (z) => DropdownMenuItem(
                         value: z.buttonName,
-                        child: Text(z.uiDisplayName),
+                        child: Text(
+                          z.uiDisplayName,
+                          style: TextStyle(fontSize: compactControls ? 13 : 14),
+                        ),
                       ),
                     )
                     .toList(),
@@ -298,12 +289,20 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
                     );
                   }
                 }),
-              ),
-              const SizedBox(width: 16),
-              _buildDropdown(
+              );
+              final floorDropdown = _buildDropdown(
                 value: _selectedFloorId,
+                compact: compactControls,
                 items: floors
-                    .map((f) => DropdownMenuItem(value: f, child: Text(f)))
+                    .map(
+                      (f) => DropdownMenuItem(
+                        value: f,
+                        child: Text(
+                          f,
+                          style: TextStyle(fontSize: compactControls ? 13 : 14),
+                        ),
+                      ),
+                    )
                     .toList(),
                 onChanged: (v) => setState(() {
                   _selectedFloorId = v;
@@ -313,9 +312,8 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
                     );
                   }
                 }),
-              ),
-              const SizedBox(width: 16),
-              FilledButton.icon(
+              );
+              final floorPlanButton = FilledButton.icon(
                 onPressed: (_selectedZoneId == null || _selectedFloorId == null)
                     ? null
                     : () {
@@ -329,25 +327,45 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
                           ).toString(),
                         );
                       },
-                icon: const Icon(Icons.map_outlined, size: 18),
-                label: const Text('Floor Plan'),
-              ),
-              const SizedBox(width: 16),
-              SizedBox(
-                width: 150,
+                style: compactControls
+                    ? FilledButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                      )
+                    : null,
+                icon: Icon(Icons.map_outlined, size: compactControls ? 16 : 18),
+                label: Text(
+                  'Floor Plan',
+                  style: TextStyle(fontSize: compactControls ? 13 : 14),
+                ),
+              );
+              final searchField = SizedBox(
+                width: compactControls ? 130 : 150,
                 child: TextField(
-                  decoration: const InputDecoration(
+                  style: TextStyle(fontSize: compactControls ? 13 : 14),
+                  decoration: InputDecoration(
                     hintText: 'Search Room',
-                    prefixIcon: Icon(Icons.search, size: 20),
+                    hintStyle: TextStyle(
+                      fontSize: compactControls ? 13 : 14,
+                      color: Colors.white60,
+                    ),
+                    prefixIcon: Icon(Icons.search, size: compactControls ? 18 : 20),
                     isDense: true,
-                    contentPadding: EdgeInsets.symmetric(vertical: 8),
+                    contentPadding: EdgeInsets.symmetric(
+                      vertical: compactControls ? 7 : 8,
+                    ),
                   ),
                   onChanged: (v) => setState(() => _roomQuery = v),
                 ),
-              ),
-              const SizedBox(width: 16),
-              IconButton(
-                icon: const Icon(Icons.refresh),
+              );
+              final refreshButton = IconButton(
+                icon: Icon(Icons.refresh, size: compactControls ? 22 : 24),
+                visualDensity: compactControls
+                    ? VisualDensity.compact
+                    : VisualDensity.standard,
                 onPressed: () {
                   final notifier = ref.read(hotelStatusProvider.notifier);
                   for (var room in visibleRooms) {
@@ -361,8 +379,77 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
                     notifier.fetchRoomSnapshot(room.number);
                   }
                 },
-              ),
-            ],
+              );
+
+              if (isTabletControls) {
+                return Wrap(
+                  alignment: WrapAlignment.start,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: compactControls ? 8 : 12,
+                  runSpacing: compactControls ? 6 : 8,
+                  children: [
+                    _buildCheckbox(
+                      'Lighting',
+                      _showLighting,
+                      (v) => setState(() => _showLighting = v!),
+                      compact: compactControls,
+                    ),
+                    _buildCheckbox(
+                      'HVAC',
+                      _showHVAC,
+                      (v) => setState(() => _showHVAC = v!),
+                      compact: compactControls,
+                    ),
+                    _buildCheckbox(
+                      'Room Service',
+                      _showRoomService,
+                      (v) => setState(() => _showRoomService = v!),
+                      compact: compactControls,
+                    ),
+                    zoneDropdown,
+                    floorDropdown,
+                    floorPlanButton,
+                    searchField,
+                    refreshButton,
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  _buildCheckbox(
+                    'Lighting',
+                    _showLighting,
+                    (v) => setState(() => _showLighting = v!),
+                    compact: compactControls,
+                  ),
+                  SizedBox(width: compactControls ? 10 : 16),
+                  _buildCheckbox(
+                    'HVAC',
+                    _showHVAC,
+                    (v) => setState(() => _showHVAC = v!),
+                    compact: compactControls,
+                  ),
+                  SizedBox(width: compactControls ? 10 : 16),
+                  _buildCheckbox(
+                    'Room Service',
+                    _showRoomService,
+                    (v) => setState(() => _showRoomService = v!),
+                    compact: compactControls,
+                  ),
+                  const Spacer(),
+                  zoneDropdown,
+                  SizedBox(width: compactControls ? 8 : 16),
+                  floorDropdown,
+                  SizedBox(width: compactControls ? 8 : 16),
+                  floorPlanButton,
+                  SizedBox(width: compactControls ? 8 : 16),
+                  searchField,
+                  SizedBox(width: compactControls ? 4 : 16),
+                  refreshButton,
+                ],
+              );
+            },
           ),
         ],
       ),
@@ -373,12 +460,20 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
     String label,
     bool value,
     ValueChanged<bool?> onChanged,
+    {bool compact = false}
   ) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Checkbox(value: value, onChanged: onChanged),
-        Text(label),
+        Transform.scale(
+          scale: compact ? 0.92 : 1.0,
+          child: Checkbox(
+            value: value,
+            visualDensity: compact ? VisualDensity.compact : VisualDensity.standard,
+            onChanged: onChanged,
+          ),
+        ),
+        Text(label, style: TextStyle(fontSize: compact ? 13 : 14)),
       ],
     );
   }
@@ -387,9 +482,10 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
     T? value,
     required List<DropdownMenuItem<T>> items,
     required ValueChanged<T?> onChanged,
+    bool compact = false,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 12),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(8),
@@ -399,6 +495,8 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
           value: value,
           items: items,
           onChanged: onChanged,
+          style: TextStyle(fontSize: compact ? 13 : 14, color: Colors.white),
+          iconSize: compact ? 18 : 24,
         ),
       ),
     );

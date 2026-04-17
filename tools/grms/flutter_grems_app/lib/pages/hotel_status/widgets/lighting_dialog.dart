@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../models/api_result.dart';
 import '../../../config/app_config.dart';
-import '../../../models/coordinates_models.dart';
 import '../../../models/lighting_device.dart';
 import '../../../models/rcu_models.dart';
 import '../../../models/room_models.dart';
@@ -24,7 +23,6 @@ import '../../../providers/lighting_devices_provider.dart';
 import '../../../providers/room_alias_provider.dart';
 import '../../../providers/room_runtime_provider.dart';
 import '../../../providers/room_service_provider.dart';
-import '../../../providers/service_icon_positions_provider.dart';
 
 class LightingDialog extends ConsumerStatefulWidget {
   const LightingDialog({super.key, required this.room});
@@ -526,55 +524,62 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.white.withOpacity(0.1)),
             ),
-            child: Center(
-              child: FittedBox(
-                fit: BoxFit.contain,
-                child: SizedBox(
-                  width: _layoutCanvasWidth,
-                  height: _layoutCanvasHeight,
-                  child: Focus(
-                    focusNode: _layoutFocusNode,
-                    onKeyEvent: _handleLayoutKeyEvent,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: () {
-                        if (isAdmin && _isEditMode) {
-                          _layoutFocusNode.requestFocus();
-                        }
-                      },
-                      child: Stack(
-                        key: _layoutStackKey,
-                        children: [
-                          Positioned.fill(
-                            child: Image.asset(
-                              'assets/images/room_layout.png',
-                              fit: BoxFit.fill,
-                              filterQuality: FilterQuality.high,
-                              cacheWidth: 3072,
-                              cacheHeight: 2120,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (isAdmin && !isTestUser) ...[
+                  _buildEditPositionsToggle(),
+                  const SizedBox(height: 10),
+                ],
+                Expanded(
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.contain,
+                      child: SizedBox(
+                        width: _layoutCanvasWidth,
+                        height: _layoutCanvasHeight,
+                        child: Focus(
+                          focusNode: _layoutFocusNode,
+                          onKeyEvent: _handleLayoutKeyEvent,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onTap: () {
+                              if (isAdmin && _isEditMode) {
+                                _layoutFocusNode.requestFocus();
+                              }
+                            },
+                            child: Stack(
+                              key: _layoutStackKey,
+                              children: [
+                                Positioned.fill(
+                                  child: Image.asset(
+                                    'assets/images/room_layout.png',
+                                    fit: BoxFit.fill,
+                                    filterQuality: FilterQuality.high,
+                                    cacheWidth: 3072,
+                                    cacheHeight: 2120,
+                                  ),
+                                ),
+                                ...mergedDevices
+                                    .where(
+                                      (device) =>
+                                          device.x != null && device.y != null,
+                                    )
+                                    .map(
+                                      (device) => _buildDevicePin(
+                                        device,
+                                        isAdmin: isAdmin,
+                                      ),
+                                    ),
+                              ],
                             ),
                           ),
-                          ...mergedDevices
-                              .where(
-                                (device) =>
-                                    device.x != null && device.y != null,
-                              )
-                              .map(
-                                (device) =>
-                                    _buildDevicePin(device, isAdmin: isAdmin),
-                              ),
-                          ..._buildServiceIconPins(
-                            room: room,
-                            entries: serviceEntries,
-                            isAdmin: isAdmin,
-                            isVisible: !isTestUser,
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
           ),
         ),
@@ -597,37 +602,47 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
                     ),
                   ),
                 Expanded(
-                  child: Column(
-                    children: [
-                      Expanded(
-                        flex: 3,
-                        child: Row(
+                  child: isCompactTablet
+                      ? SingleChildScrollView(
+                          child: Column(
+                            children: [
+                              _buildSceneControlCard(),
+                              const SizedBox(height: 10),
+                              _buildBlindsControlCard(),
+                              const SizedBox(height: 10),
+                              _buildHvacCard(room),
+                              const SizedBox(height: 10),
+                              _buildServiceCard(room, serviceEntries),
+                            ],
+                          ),
+                        )
+                      : Column(
                           children: [
-                            Expanded(child: _buildSceneControlCard()),
-                            const SizedBox(width: 10),
                             Expanded(
-                              child: _buildBlindsControlCard(
-                                showEditPositionsToggle: !isTestUser,
+                              flex: 3,
+                              child: Row(
+                                children: [
+                                  Expanded(child: _buildSceneControlCard()),
+                                  const SizedBox(width: 10),
+                                  Expanded(child: _buildBlindsControlCard()),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Expanded(
+                              flex: 7,
+                              child: Row(
+                                children: [
+                                  Expanded(child: _buildHvacCard(room)),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: _buildServiceCard(room, serviceEntries),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
                         ),
-                      ),
-                      const SizedBox(height: 10),
-                      Expanded(
-                        flex: 7,
-                        child: Row(
-                          children: [
-                            Expanded(child: _buildHvacCard(room)),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _buildServiceCard(room, serviceEntries),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
                 ),
                 if (_errorMessage != null) ...[
                   const SizedBox(height: 8),
@@ -644,7 +659,42 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     );
   }
 
-  Widget _buildBlindsControlCard({required bool showEditPositionsToggle}) {
+  Widget _buildEditPositionsToggle() {
+    return SwitchListTile(
+      dense: true,
+      visualDensity: VisualDensity.compact,
+      value: _isEditMode,
+      title: const Text(
+        'Edit Positions',
+        style: TextStyle(color: Colors.white),
+      ),
+      subtitle: Text(
+        _isEditMode
+            ? 'Drag pins or use arrow keys for fine movement.'
+            : 'Move lighting pins.',
+        style: TextStyle(
+          color: Colors.white.withOpacity(0.65),
+          fontSize: 11,
+        ),
+      ),
+      onChanged: (value) {
+        setState(() {
+          _isEditMode = value;
+          if (!value) {
+            _dragCanvasPositions.clear();
+            _draggingKey = null;
+            _keyboardPersistTimer?.cancel();
+            _layoutFocusNode.unfocus();
+          } else {
+            _layoutFocusNode.requestFocus();
+          }
+        });
+      },
+      contentPadding: EdgeInsets.zero,
+    );
+  }
+
+  Widget _buildBlindsControlCard() {
     final blindsCount = _buildMergedDevices().where(_isBlindDevice).length;
     return Container(
       padding: const EdgeInsets.all(12),
@@ -696,40 +746,6 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          if (showEditPositionsToggle)
-            SwitchListTile(
-              dense: true,
-              visualDensity: VisualDensity.compact,
-              value: _isEditMode,
-              title: const Text(
-                'Edit Positions',
-                style: TextStyle(color: Colors.white),
-              ),
-              subtitle: Text(
-                _isEditMode
-                    ? 'Drag pins or use arrow keys for fine movement.'
-                    : 'Move lighting and service pins.',
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.65),
-                  fontSize: 11,
-                ),
-              ),
-              onChanged: (value) {
-                setState(() {
-                  _isEditMode = value;
-                  if (!value) {
-                    _dragCanvasPositions.clear();
-                    _draggingKey = null;
-                    _keyboardPersistTimer?.cancel();
-                    _layoutFocusNode.unfocus();
-                  } else {
-                    _layoutFocusNode.requestFocus();
-                  }
-                });
-              },
-              contentPadding: EdgeInsets.zero,
-            ),
         ],
       ),
     );
@@ -1011,7 +1027,10 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     required RoomServiceEntry? entry,
     required String fallbackState,
   }) {
-    final stateText = entry?.serviceState ?? fallbackState;
+    final stateText = _displayServiceState(
+      serviceType,
+      entry?.serviceState ?? fallbackState,
+    );
     final timestampText = entry?.activationTime ?? '-';
     final actionLabels = ('On', 'Off');
     final actionStates = switch (serviceType) {
@@ -1094,6 +1113,19 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
         ],
       ),
     );
+  }
+
+  String _displayServiceState(ServiceType type, String rawState) {
+    final normalized = rawState.trim().toLowerCase();
+    switch (type) {
+      case ServiceType.dnd:
+        const onStates = {'on', 'yellow', 'requested', 'active'};
+        return onStates.contains(normalized) ? 'On' : 'Off';
+      case ServiceType.mur:
+      case ServiceType.laundry:
+        const onStates = {'requested', 'started', 'yellow', 'on', 'active'};
+        return onStates.contains(normalized) ? 'On' : 'Off';
+    }
   }
 
   Widget _serviceIconTile({required String label, required String iconPath}) {
@@ -1370,143 +1402,6 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     );
   }
 
-  static const Map<String, Offset> _defaultServiceIconCenters = {
-    'dnd': Offset(1250, 205),
-    'laundry': Offset(1320, 205),
-    'mur': Offset(1390, 205),
-  };
-
-  List<Widget> _buildServiceIconPins({
-    required RoomData room,
-    required List<RoomServiceEntry> entries,
-    required bool isAdmin,
-    required bool isVisible,
-  }) {
-    if (!isVisible) {
-      return const <Widget>[];
-    }
-    final savedPositions = ref.watch(serviceIconPositionsProvider);
-    final iconSize = 26.0 * _pinScale;
-    final canDrag = isAdmin && _isEditMode;
-
-    Widget buildOne(ServiceType type) {
-      final typeKey = type.name.toLowerCase();
-      final key = 'service-$typeKey';
-      final center =
-          savedPositions[typeKey] ?? _defaultServiceIconCenters[typeKey];
-      if (center == null) {
-        return const SizedBox.shrink();
-      }
-
-      final centerX = _normalizeToCanvas(center.dx, _layoutCanvasWidth);
-      final centerY = _normalizeToCanvas(center.dy, _layoutCanvasHeight);
-      final dragOffset = _dragCanvasPositions[key];
-      final left =
-          dragOffset?.dx ??
-          _clamp(centerX - (iconSize / 2), 0, _layoutCanvasWidth - iconSize);
-      final top =
-          dragOffset?.dy ??
-          _clamp(centerY - (iconSize / 2), 0, _layoutCanvasHeight - iconSize);
-
-      final state = _serviceStateFor(type, room, entries);
-      final iconPath = _serviceIconForState(type, state);
-
-      return Positioned(
-        left: left,
-        top: top,
-        child: GestureDetector(
-          onPanStart: canDrag
-              ? (_) {
-                  setState(() {
-                    _draggingKey = key;
-                    _dragCanvasPositions[key] = Offset(left, top);
-                    _layoutFocusNode.requestFocus();
-                  });
-                }
-              : null,
-          onPanUpdate: canDrag
-              ? (details) {
-                  final local = _globalToCanvasPoint(details.globalPosition);
-                  if (local == null) {
-                    return;
-                  }
-                  final offset = Offset(
-                    _clamp(
-                      local.dx - (iconSize / 2),
-                      0,
-                      _layoutCanvasWidth - iconSize,
-                    ),
-                    _clamp(
-                      local.dy - (iconSize / 2),
-                      0,
-                      _layoutCanvasHeight - iconSize,
-                    ),
-                  );
-                  setState(() {
-                    _dragCanvasPositions[key] = offset;
-                  });
-                }
-              : null,
-          onPanEnd: canDrag
-              ? (_) async {
-                  if (_draggingKey != key) {
-                    return;
-                  }
-                  await _persistDraggedServiceIcon(
-                    serviceType: typeKey,
-                    key: key,
-                    iconSize: iconSize,
-                  );
-                }
-              : null,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            width: iconSize,
-            height: iconSize,
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.20),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: canDrag
-                    ? Colors.lightBlueAccent
-                    : Colors.white.withOpacity(0.35),
-                width: canDrag ? 2 : 1,
-              ),
-            ),
-            child: Image.asset(iconPath, fit: BoxFit.contain),
-          ),
-        ),
-      );
-    }
-
-    return <Widget>[
-      buildOne(ServiceType.dnd),
-      buildOne(ServiceType.laundry),
-      buildOne(ServiceType.mur),
-    ];
-  }
-
-  String _serviceStateFor(
-    ServiceType type,
-    RoomData room,
-    List<RoomServiceEntry> entries,
-  ) {
-    for (final entry in entries) {
-      if (entry.serviceType == type) {
-        return entry.serviceState;
-      }
-    }
-    switch (type) {
-      case ServiceType.dnd:
-        return room.dnd.label;
-      case ServiceType.mur:
-        return room.mur.label;
-      case ServiceType.laundry:
-        return room.laundry.label;
-    }
-  }
-
   String _serviceIconForState(ServiceType type, String rawState) {
     final normalized = rawState.trim().toLowerCase();
     const basePath = 'assets/images/room_status/';
@@ -1535,94 +1430,6 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
         }
         return '${basePath}lnd.png';
     }
-  }
-
-  Future<void> _persistDraggedServiceIcon({
-    required String serviceType,
-    required String key,
-    required double iconSize,
-  }) async {
-    final dragOffset = _dragCanvasPositions[key];
-    if (dragOffset == null) {
-      setState(() {
-        _draggingKey = null;
-      });
-      return;
-    }
-
-    final centerX = _clamp(
-      dragOffset.dx + (iconSize / 2),
-      0,
-      _layoutCanvasWidth,
-    );
-    final centerY = _clamp(
-      dragOffset.dy + (iconSize / 2),
-      0,
-      _layoutCanvasHeight,
-    );
-
-    final existing =
-        ref.read(serviceIconPositionsProvider)[serviceType] ??
-        _defaultServiceIconCenters[serviceType] ??
-        Offset(centerX, centerY);
-
-    final persistedX = _denormalizeFromCanvas(
-      sourceTemplate: existing.dx,
-      canvasValue: centerX,
-      canvasSize: _layoutCanvasWidth,
-    );
-    final persistedY = _denormalizeFromCanvas(
-      sourceTemplate: existing.dy,
-      canvasValue: centerY,
-      canvasSize: _layoutCanvasHeight,
-    );
-
-    final next = <String, Offset>{
-      ...ref.read(serviceIconPositionsProvider),
-      serviceType: Offset(persistedX, persistedY),
-    };
-    // Ensure all three keys exist so backend file is deterministic.
-    for (final entry in _defaultServiceIconCenters.entries) {
-      next.putIfAbsent(entry.key, () => entry.value);
-    }
-
-    final payload = <Map<String, dynamic>>[
-      for (final entry in next.entries)
-        {'serviceType': entry.key, 'x': entry.value.dx, 'y': entry.value.dy},
-    ];
-
-    final result = await ref
-        .read(coordinatesApiProvider)
-        .saveServiceIcons(payload);
-    if (mounted) {
-      if (result is Failure<void>) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Failed to save service icon: ${result.error.message}',
-            ),
-          ),
-        );
-      } else {
-        ref
-            .read(serviceIconPositionsProvider.notifier)
-            .applyFromPayload(
-              payload
-                  .map((e) => ServiceIconConfig.fromJson(e))
-                  .toList(growable: false),
-            );
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Service icon position updated ($serviceType)'),
-          ),
-        );
-      }
-    }
-
-    setState(() {
-      _draggingKey = null;
-      _dragCanvasPositions.remove(key);
-    });
   }
 
   double _normalizeToCanvas(double source, double canvasSize) {

@@ -19,12 +19,27 @@ class _ZonePreviewPageState extends ConsumerState<ZonePreviewPage> {
   static const double _mapOriginalWidth = 1920;
   static const double _mapOriginalHeight = 1080;
   static const double _dragThreshold = 6;
+  static const BoxFit _mapFit = BoxFit.contain;
 
   int? _draggingFloorIndex;
   Offset? _dragStartPointerPos;
   Offset? _dragStartFloorPos;
   bool _hasMovedSignificantly = false;
   bool _floorEditMode = false;
+
+  Rect _resolveMapRect(BoxConstraints constraints) {
+    final sourceSize = const Size(_mapOriginalWidth, _mapOriginalHeight);
+    final destinationSize = Size(constraints.maxWidth, constraints.maxHeight);
+    final fitted = applyBoxFit(_mapFit, sourceSize, destinationSize);
+    final dx = (destinationSize.width - fitted.destination.width) / 2;
+    final dy = (destinationSize.height - fitted.destination.height) / 2;
+    return Rect.fromLTWH(
+      dx,
+      dy,
+      fitted.destination.width,
+      fitted.destination.height,
+    );
+  }
 
   void _setFloorEditMode(bool enabled) {
     setState(() {
@@ -47,7 +62,7 @@ class _ZonePreviewPageState extends ConsumerState<ZonePreviewPage> {
   }
 
   void _updateFloorDrag({
-    required BoxConstraints constraints,
+    required Rect mapRect,
     required String zoneId,
     required String floor,
     required int index,
@@ -63,8 +78,8 @@ class _ZonePreviewPageState extends ConsumerState<ZonePreviewPage> {
       _hasMovedSignificantly = true;
     }
 
-    final mapDeltaX = (delta.dx / constraints.maxWidth) * _mapOriginalWidth;
-    final mapDeltaY = (delta.dy / constraints.maxHeight) * _mapOriginalHeight;
+    final mapDeltaX = (delta.dx / mapRect.width) * _mapOriginalWidth;
+    final mapDeltaY = (delta.dy / mapRect.height) * _mapOriginalHeight;
     final nextPoint = Offset(
       (_dragStartFloorPos!.dx + mapDeltaX).clamp(0.0, _mapOriginalWidth),
       (_dragStartFloorPos!.dy + mapDeltaY).clamp(0.0, _mapOriginalHeight),
@@ -161,6 +176,7 @@ class _ZonePreviewPageState extends ConsumerState<ZonePreviewPage> {
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
+                  final mapRect = _resolveMapRect(constraints);
                   return ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: Stack(
@@ -168,7 +184,7 @@ class _ZonePreviewPageState extends ConsumerState<ZonePreviewPage> {
                       children: [
                         Image.asset(
                           'assets/images/zone_preview.png',
-                          fit: BoxFit.cover,
+                          fit: _mapFit,
                         ),
                         if (selectedZone != null && floors.isNotEmpty)
                           ...() {
@@ -202,11 +218,13 @@ class _ZonePreviewPageState extends ConsumerState<ZonePreviewPage> {
                               y: rawFloorPosition.y,
                             );
                             final left =
-                                (floorPosition.x / _mapOriginalWidth) *
-                                constraints.maxWidth;
+                                mapRect.left +
+                                ((floorPosition.x / _mapOriginalWidth) *
+                                    mapRect.width);
                             final top =
-                                (floorPosition.y / _mapOriginalHeight) *
-                                constraints.maxHeight;
+                                mapRect.top +
+                                ((floorPosition.y / _mapOriginalHeight) *
+                                    mapRect.height);
                             final isDragging = _draggingFloorIndex == index;
 
                             return Positioned(
@@ -228,11 +246,11 @@ class _ZonePreviewPageState extends ConsumerState<ZonePreviewPage> {
                                     children: [
                                       Container(
                                         constraints: const BoxConstraints(
-                                          minWidth: 108,
+                                          minWidth: 54,
                                         ),
                                         padding: const EdgeInsets.symmetric(
-                                          horizontal: 18,
-                                          vertical: 12,
+                                          horizontal: 9,
+                                          vertical: 6,
                                         ),
                                         decoration: BoxDecoration(
                                           color:
@@ -241,20 +259,20 @@ class _ZonePreviewPageState extends ConsumerState<ZonePreviewPage> {
                                                   : Colors.black.withOpacity(
                                                     0.68,
                                                   ),
-                                          borderRadius: BorderRadius.circular(12),
+                                          borderRadius: BorderRadius.circular(6),
                                           border: Border.all(
                                             color: isDragging
                                                 ? Colors.white
                                                 : Colors.white.withOpacity(0.24),
-                                            width: isDragging ? 2.2 : 1.4,
+                                            width: isDragging ? 1.1 : 0.7,
                                           ),
                                           boxShadow: [
                                             BoxShadow(
                                               color: Colors.black.withOpacity(
                                                 isDragging ? 0.42 : 0.34,
                                               ),
-                                              blurRadius: isDragging ? 18 : 14,
-                                              offset: const Offset(0, 6),
+                                              blurRadius: isDragging ? 9 : 7,
+                                              offset: const Offset(0, 3),
                                             ),
                                           ],
                                         ),
@@ -263,15 +281,15 @@ class _ZonePreviewPageState extends ConsumerState<ZonePreviewPage> {
                                           textAlign: TextAlign.center,
                                           style: const TextStyle(
                                             color: Colors.white,
-                                            fontSize: 22,
+                                            fontSize: 11,
                                             fontWeight: FontWeight.w800,
                                             letterSpacing: 0.2,
                                             height: 1,
                                             shadows: [
                                               Shadow(
                                                 color: Color(0x99000000),
-                                                blurRadius: 8,
-                                                offset: Offset(0, 2),
+                                                blurRadius: 4,
+                                                offset: Offset(0, 1),
                                               ),
                                             ],
                                           ),
@@ -293,7 +311,7 @@ class _ZonePreviewPageState extends ConsumerState<ZonePreviewPage> {
                                               ),
                                               onPanUpdate: (d) =>
                                                   _updateFloorDrag(
-                                                    constraints: constraints,
+                                                    mapRect: mapRect,
                                                     zoneId: selectedZone,
                                                     floor: floor,
                                                     index: index,
