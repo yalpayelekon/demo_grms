@@ -650,7 +650,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
                   child: Column(
                     children: [
                       Expanded(
-                        flex: 3,
+                        flex: 4,
                         child: Row(
                           children: [
                             Expanded(child: _buildSceneControlCard()),
@@ -666,7 +666,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
                       ),
                       const SizedBox(height: 10),
                       Expanded(
-                        flex: 7,
+                        flex: 6,
                         child: Row(
                           children: [
                             Expanded(child: _buildHvacCard(room)),
