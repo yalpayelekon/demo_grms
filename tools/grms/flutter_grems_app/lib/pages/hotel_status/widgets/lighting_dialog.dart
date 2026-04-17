@@ -21,6 +21,7 @@ import '../../../lighting/lighting_alarm_style.dart';
 import '../../../lighting/lighting_device_merge.dart';
 import '../../../providers/hotel_status_provider.dart';
 import '../../../providers/lighting_devices_provider.dart';
+import '../../../providers/room_alias_provider.dart';
 import '../../../providers/room_runtime_provider.dart';
 import '../../../providers/room_service_provider.dart';
 import '../../../providers/service_icon_positions_provider.dart';
@@ -454,10 +455,17 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     final sideFlex = isCompactTablet ? 2 : 1;
 
     final room = _latestRoom;
+    final effectiveBackendRoomNumber = ref.read(
+      effectiveBackendRoomNumberProvider(room.number),
+    );
     final serviceEntries =
         ref
             .watch(roomServiceProvider)
-            .where((entry) => entry.roomNumber == room.number)
+            .where(
+              (entry) =>
+                  entry.roomNumber == room.number ||
+                  entry.roomNumber == effectiveBackendRoomNumber,
+            )
             .toList()
           ..sort((a, b) => b.eventTimestamp.compareTo(a.eventTimestamp));
 

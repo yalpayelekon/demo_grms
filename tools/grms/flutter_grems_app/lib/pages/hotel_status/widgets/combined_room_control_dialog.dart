@@ -14,6 +14,7 @@ import '../../../providers/auth_provider.dart';
 import '../../../providers/demo_room_snapshot_provider.dart';
 import '../../../providers/hotel_status_provider.dart';
 import '../../../providers/lighting_devices_provider.dart';
+import '../../../providers/room_alias_provider.dart';
 import '../../../providers/room_runtime_provider.dart';
 import '../../../providers/room_service_provider.dart';
 import '../../../lighting/lighting_alarm_style.dart';
@@ -808,10 +809,17 @@ class _CombinedRoomControlDialogState
   }
 
   Widget _buildServiceCard({required RoomData room, required bool isAdmin}) {
+    final effectiveBackendRoomNumber = ref.read(
+      effectiveBackendRoomNumberProvider(room.number),
+    );
     final entries =
         ref
             .watch(roomServiceProvider)
-            .where((entry) => entry.roomNumber == room.number)
+            .where(
+              (entry) =>
+                  entry.roomNumber == room.number ||
+                  entry.roomNumber == effectiveBackendRoomNumber,
+            )
             .toList()
           ..sort((a, b) => b.eventTimestamp.compareTo(a.eventTimestamp));
 

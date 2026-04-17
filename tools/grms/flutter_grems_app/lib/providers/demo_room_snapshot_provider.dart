@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/room_runtime_snapshot.dart';
 import 'api_providers.dart';
+import 'room_alias_provider.dart';
 
 class DemoRoomSnapshotState {
   const DemoRoomSnapshotState({
@@ -70,11 +71,24 @@ class RoomSnapshotNotifier
   bool _sseConnected = false;
   int _reconnectAttempts = 0;
   late final String _roomNumber;
+  late final String _effectiveBackendRoomNumber;
 
   @override
   DemoRoomSnapshotState build(String roomNumber) {
     _roomNumber = roomNumber;
-    _start();
+    _effectiveBackendRoomNumber = ref.watch(
+      effectiveBackendRoomNumberProvider(roomNumber),
+    );
+    if (kDebugMode) {
+      debugPrint(
+        'RoomSnapshotNotifier.build display=$_roomNumber effective=$_effectiveBackendRoomNumber',
+      );
+    }
+    if (_effectiveBackendRoomNumber == roomNumber) {
+      _start();
+    } else {
+      _startProxy(_effectiveBackendRoomNumber);
+    }
     ref.onDispose(() {
       _reconnectTimer?.cancel();
       _pollTimer?.cancel();
@@ -85,13 +99,45 @@ class RoomSnapshotNotifier
     return const DemoRoomSnapshotState();
   }
 
+  void _startProxy(String backendRoomNumber) {
+    if (kDebugMode) {
+      debugPrint(
+        'RoomSnapshotNotifier.proxy display=$_roomNumber backend=$backendRoomNumber',
+      );
+    }
+    final sourceProvider = roomSnapshotProvider(backendRoomNumber);
+    ref.listen<DemoRoomSnapshotState>(
+      sourceProvider,
+      (previous, next) {
+        _applyProxyState(next, backendRoomNumber);
+      },
+    );
+    _applyProxyState(ref.read(sourceProvider), backendRoomNumber);
+  }
+
   void _start() {
+    if (kDebugMode) {
+      debugPrint(
+        'RoomSnapshotNotifier.start direct room=$_roomNumber effective=$_effectiveBackendRoomNumber',
+      );
+    }
     _fetchSnapshot();
     _connectSse();
     _startPolling();
   }
 
   Future<void> refreshNow() async {
+    if (kDebugMode) {
+      debugPrint(
+        'RoomSnapshotNotifier.refresh display=$_roomNumber effective=$_effectiveBackendRoomNumber',
+      );
+    }
+    if (_effectiveBackendRoomNumber != _roomNumber) {
+      await ref
+          .read(roomSnapshotProvider(_effectiveBackendRoomNumber).notifier)
+          .refreshNow();
+      return;
+    }
     await _fetchSnapshot();
   }
 
@@ -124,8 +170,13 @@ class RoomSnapshotNotifier
   Future<void> _fetchSnapshot() async {
     final baseUrl = ref.read(appConfigProvider).apiBaseUrl;
     final uri = Uri.parse(
-      '$baseUrl/testcomm/rooms/${Uri.encodeComponent(_roomNumber)}',
+      '$baseUrl/testcomm/rooms/${Uri.encodeComponent(_effectiveBackendRoomNumber)}',
     );
+    if (kDebugMode) {
+      debugPrint(
+        'RoomSnapshotNotifier.fetch display=$_roomNumber effective=$_effectiveBackendRoomNumber uri=$uri',
+      );
+    }
 
     try {
       final response = await _snapshotHttpClient.get(uri);
@@ -155,8 +206,13 @@ class RoomSnapshotNotifier
 
     final baseUrl = ref.read(appConfigProvider).apiBaseUrl;
     final uri = Uri.parse(
-      '$baseUrl/testcomm/rooms/${Uri.encodeComponent(_roomNumber)}/stream',
+      '$baseUrl/testcomm/rooms/${Uri.encodeComponent(_effectiveBackendRoomNumber)}/stream',
     );
+    if (kDebugMode) {
+      debugPrint(
+        'RoomSnapshotNotifier.sse display=$_roomNumber effective=$_effectiveBackendRoomNumber uri=$uri',
+      );
+    }
 
     try {
       final req = http.Request('GET', uri);
@@ -229,18 +285,19 @@ class RoomSnapshotNotifier
   }
 
   void _applySnapshot(Map<String, dynamic> snapshot) {
+    final displaySnapshot = _withDisplayRoomNumber(snapshot);
     final meta = snapshot['_meta'];
     final source = meta is Map && meta['source'] is String
         ? (meta['source'] as String).trim()
         : '';
     final runtimeSnapshot = RoomRuntimeSnapshot.fromSnapshot(
-      snapshot,
+      displaySnapshot,
       receivedAt: DateTime.now(),
     );
     if (kDebugMode) {
       final version = state.snapshotVersion + 1;
       final prevSnapshot = state.snapshot;
-      final lightingDevices = snapshot['lightingDevices'];
+      final lightingDevices = displaySnapshot['lightingDevices'];
       List<dynamic>? prevDevices;
       if (prevSnapshot is Map<String, dynamic>) {
         final rawPrevDevices = prevSnapshot['lightingDevices'];
@@ -313,13 +370,49 @@ class RoomSnapshotNotifier
       }
     }
     state = state.copyWith(
-      snapshot: snapshot,
+      snapshot: displaySnapshot,
       runtimeSnapshot: runtimeSnapshot,
       snapshotVersion: state.snapshotVersion + 1,
       source: source.isEmpty ? state.source : source,
       targetUnreachable: false,
       clearMessage: true,
     );
+  }
+
+  void _applyProxyState(
+    DemoRoomSnapshotState sourceState,
+    String backendRoomNumber,
+  ) {
+    final proxiedSnapshot = sourceState.snapshot == null
+        ? null
+        : _withDisplayRoomNumber(sourceState.snapshot!);
+    final proxiedRuntimeSnapshot = proxiedSnapshot == null
+        ? null
+        : RoomRuntimeSnapshot.fromSnapshot(
+            proxiedSnapshot,
+            receivedAt:
+                sourceState.runtimeSnapshot?.receivedAt ?? DateTime.now(),
+          );
+    state = state.copyWith(
+      snapshot: proxiedSnapshot,
+      runtimeSnapshot: proxiedRuntimeSnapshot,
+      clearSnapshot: proxiedSnapshot == null,
+      clearRuntimeSnapshot: proxiedRuntimeSnapshot == null,
+      snapshotVersion: sourceState.snapshotVersion,
+      connected: sourceState.connected,
+      source: sourceState.source,
+      targetUnreachable: sourceState.targetUnreachable,
+      message: sourceState.message,
+      clearMessage: sourceState.message == null,
+      reconnectAttempt: sourceState.reconnectAttempt,
+    );
+  }
+
+  Map<String, dynamic> _withDisplayRoomNumber(Map<String, dynamic> snapshot) {
+    if (_effectiveBackendRoomNumber == _roomNumber) {
+      return snapshot;
+    }
+    return <String, dynamic>{...snapshot, 'number': _roomNumber};
   }
 }
 

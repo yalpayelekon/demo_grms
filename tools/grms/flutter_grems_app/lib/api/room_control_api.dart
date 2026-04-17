@@ -10,19 +10,26 @@ class RoomControlApi {
   final String baseUrl;
   final http.Client _client;
   final Future<String?> Function()? roleProvider;
+  final String Function(String roomNumber)? roomNumberResolver;
 
   RoomControlApi({
     required this.baseUrl,
     this.roleProvider,
+    this.roomNumberResolver,
     http.Client? client,
   }) : _client = client ?? http.Client();
 
   String get _roomsBase => '$baseUrl/testcomm/rooms';
 
+  String _resolveRoomNumber(String roomNumber) {
+    return roomNumberResolver?.call(roomNumber) ?? roomNumber;
+  }
+
   Future<ApiResult<RoomData>> getRoomSnapshot(String roomNumber) async {
+    final effectiveRoomNumber = _resolveRoomNumber(roomNumber);
     return _requestJson(
       method: 'GET',
-      path: '$_roomsBase/${Uri.encodeComponent(roomNumber)}',
+      path: '$_roomsBase/${Uri.encodeComponent(effectiveRoomNumber)}',
       parse: (json) => RoomData.fromJson(json),
     );
   }
@@ -33,9 +40,11 @@ class RoomControlApi {
     int level, {
     LightingDeviceType type = LightingDeviceType.onboard,
   }) async {
+    final effectiveRoomNumber = _resolveRoomNumber(roomNumber);
     return _requestNoContent(
       method: 'POST',
-      path: '$_roomsBase/${Uri.encodeComponent(roomNumber)}/lighting/level',
+      path:
+          '$_roomsBase/${Uri.encodeComponent(effectiveRoomNumber)}/lighting/level',
       payload: {'address': address, 'level': level, 'type': type.name},
       includeRoleHeader: true,
     );
@@ -44,9 +53,11 @@ class RoomControlApi {
   Future<ApiResult<LightingDevicesResponse>> getLightingDevices(
     String roomNumber,
   ) async {
+    final effectiveRoomNumber = _resolveRoomNumber(roomNumber);
     return _requestJson(
       method: 'GET',
-      path: '$_roomsBase/${Uri.encodeComponent(roomNumber)}/lighting/devices',
+      path:
+          '$_roomsBase/${Uri.encodeComponent(effectiveRoomNumber)}/lighting/devices',
       parse: (json) => LightingDevicesResponse.fromJson(json),
     );
   }
@@ -59,6 +70,7 @@ class RoomControlApi {
     int? clientTappedAtMs,
     }
   ) async {
+    final effectiveRoomNumber = _resolveRoomNumber(roomNumber);
     final payload = <String, dynamic>{'scene': scene};
     if (clientRequestId != null && clientRequestId.isNotEmpty) {
       payload['clientRequestId'] = clientRequestId;
@@ -68,7 +80,8 @@ class RoomControlApi {
     }
     return _requestJson(
       method: 'POST',
-      path: '$_roomsBase/${Uri.encodeComponent(roomNumber)}/lighting/scene',
+      path:
+          '$_roomsBase/${Uri.encodeComponent(effectiveRoomNumber)}/lighting/scene',
       payload: payload,
       parse: (json) => LightingSceneTriggerResponse.fromJson(json),
       includeRoleHeader: true,
@@ -78,7 +91,8 @@ class RoomControlApi {
   Future<ApiResult<RcuMenuResponse>> fetchRcuMenu(
     RcuMenuRequest request,
   ) async {
-    final path = '$_roomsBase/${Uri.encodeComponent(request.roomNumber)}/menu';
+    final effectiveRoomNumber = _resolveRoomNumber(request.roomNumber);
+    final path = '$_roomsBase/${Uri.encodeComponent(effectiveRoomNumber)}/menu';
     if (request.choice == null) {
       return _requestJson(
         method: 'GET',
@@ -99,9 +113,10 @@ class RoomControlApi {
     String roomNumber,
     Map<String, dynamic> updates,
   ) async {
+    final effectiveRoomNumber = _resolveRoomNumber(roomNumber);
     return _requestJson(
       method: 'PUT',
-      path: '$_roomsBase/${Uri.encodeComponent(roomNumber)}/hvac',
+      path: '$_roomsBase/${Uri.encodeComponent(effectiveRoomNumber)}/hvac',
       payload: updates,
       parse: (json) => HvacDetail.fromJson(json),
       includeRoleHeader: true,

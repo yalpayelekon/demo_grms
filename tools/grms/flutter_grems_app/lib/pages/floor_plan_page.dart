@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../pages/hotel_status/widgets/lighting_dialog.dart';
 import '../providers/auth_provider.dart';
 import '../providers/hotel_status_provider.dart';
+import '../providers/room_alias_provider.dart';
 import '../providers/room_runtime_provider.dart';
 import '../providers/zones_provider.dart';
 
@@ -49,6 +50,7 @@ class _FloorPlanPageState extends ConsumerState<FloorPlanPage> {
     }
 
     final rooms = floorMap[_selectedFloor] ?? const <String>[];
+    _syncMirroredDemoRoom(rooms);
     if (rooms.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ref.read(hotelStatusProvider.notifier).initializeRooms(rooms);
@@ -160,5 +162,18 @@ class _FloorPlanPageState extends ConsumerState<FloorPlanPage> {
       return rooms.first;
     }
     return '1001';
+  }
+
+  void _syncMirroredDemoRoom(List<String> rooms) {
+    final mirroredRoom = rooms.isNotEmpty ? rooms.first : null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final notifier = ref.read(mirroredDemoRoomNumberProvider.notifier);
+      if (notifier.state != mirroredRoom) {
+        notifier.state = mirroredRoom;
+      }
+    });
   }
 }

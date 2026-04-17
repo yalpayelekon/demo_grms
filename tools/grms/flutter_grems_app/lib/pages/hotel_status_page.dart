@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../models/room_models.dart';
 import '../models/zones_models.dart';
 import '../models/service_policy.dart';
@@ -11,6 +12,7 @@ import '../providers/zones_provider.dart';
 import '../providers/hotel_status_provider.dart';
 import '../providers/room_service_provider.dart';
 import '../providers/demo_room_snapshot_provider.dart';
+import '../providers/room_alias_provider.dart';
 import '../providers/room_runtime_provider.dart';
 import '../models/service_models.dart';
 import '../models/api_result.dart';
@@ -29,9 +31,6 @@ class HotelStatusPage extends ConsumerStatefulWidget {
 }
 
 class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
-  static const String _demoZoneId = 'demo-rcu';
-  static const String _demoRoomNumber = 'Demo 101';
-
   bool _showLighting = true;
   bool _showHVAC = true;
   bool _showRoomService = true;
@@ -39,9 +38,6 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
   String? _selectedZoneId;
   String? _selectedFloorId;
   String _roomQuery = '';
-
-  bool _demoLiveSyncEnabled = false;
-  bool _demoSnapshotListenerAttached = false;
 
   final Set<RoomStatus> _activeFilters = {
     RoomStatus.rentedOccupied,
@@ -85,21 +81,36 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
     }
 
     final roomNumbers = floorMap[_selectedFloorId] ?? [];
-    _updateDemoRoomLiveSyncState(roomNumbers);
-    _listenDemoSnapshot();
+    final mirroredRoomNumber = roomNumbers.isNotEmpty ? roomNumbers.first : null;
+    _syncMirroredDemoRoom(mirroredRoomNumber);
+    final activeMirroredRoomNumber = ref.watch(mirroredDemoRoomNumberProvider);
+    final mirrorReady = mirroredRoomNumber != null &&
+        activeMirroredRoomNumber == mirroredRoomNumber;
 
     if (kDebugMode) {
       debugLog(
-        'HotelStatusPage: zone=$_selectedZoneId floor=$_selectedFloorId floors=${floors.length} rooms=${roomNumbers.length}',
+        'HotelStatusPage: zone=$_selectedZoneId floor=$_selectedFloorId floors=${floors.length} rooms=${roomNumbers.length} mirroredTarget=$mirroredRoomNumber activeMirror=$activeMirroredRoomNumber mirrorReady=$mirrorReady',
       );
     }
 
     final hotelStatusState = ref.watch(hotelStatusProvider);
-    final hotelSyncStatus = ref.watch(demoRoomHotelSyncStatusProvider);
-    ref.watch(demoRoomSnapshotProvider);
-    final demoRuntimeRoom = ref.watch(roomRuntimeRoomViewProvider(_demoRoomNumber));
+    final mirroredSnapshotState = !mirrorReady
+        ? null
+        : ref.watch(roomSnapshotProvider(mirroredRoomNumber!));
+    final hotelSyncStatus = DemoRoomHotelSyncStatus(
+      source: mirroredSnapshotState?.source ?? 'live',
+      targetUnreachable: mirroredSnapshotState?.targetUnreachable ?? false,
+      message: mirroredSnapshotState?.message,
+      reconnectAttempt: mirroredSnapshotState?.reconnectAttempt ?? 0,
+    );
+    final mirroredRuntimeRoom = !mirrorReady
+        ? null
+        : ref.watch(roomRuntimeRoomViewProvider(mirroredRoomNumber!));
     final roomServices = ref.watch(roomServiceProvider);
-    final serviceOverlayMap = _buildServiceOverlayMap(roomServices);
+    final serviceOverlayMap = _buildServiceOverlayMap(
+      roomServices,
+      mirroredRoomNumber: mirroredRoomNumber,
+    );
 
     // Initialize rooms if not already there
     if (roomNumbers.isNotEmpty) {
@@ -111,8 +122,9 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
     // Filter rooms
     final visibleRooms = roomNumbers
         .map((roomNumber) {
-          final base = roomNumber == _demoRoomNumber && demoRuntimeRoom != null
-              ? demoRuntimeRoom
+          final base =
+              roomNumber == mirroredRoomNumber && mirroredRuntimeRoom != null
+              ? mirroredRuntimeRoom
               : (hotelStatusState.rooms[roomNumber] ??
                     generateSimulatedRoomState(roomNumber));
           final overlay = serviceOverlayMap[roomNumber];
@@ -151,7 +163,13 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
     return Scaffold(
       body: Column(
         children: [
-          _buildControls(zones, floors, visibleRooms, hotelSyncStatus),
+          _buildControls(
+            zones,
+            floors,
+            visibleRooms,
+            hotelSyncStatus,
+            hasLiveDemoMirror: mirroredRoomNumber != null,
+          ),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -204,44 +222,12 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
     );
   }
 
-  void _updateDemoRoomLiveSyncState(List<String> roomNumbers) {
-    _demoLiveSyncEnabled =
-        _selectedZoneId == _demoZoneId && roomNumbers.contains(_demoRoomNumber);
-  }
-
-  void _listenDemoSnapshot() {
-    if (_demoSnapshotListenerAttached) {
-      return;
-    }
-    _demoSnapshotListenerAttached = true;
-    ref.listenManual(demoRoomSnapshotProvider, (previous, next) {
-      if (!_demoLiveSyncEnabled) {
-        return;
-      }
-
-      if (previous?.snapshotVersion != next.snapshotVersion &&
-          next.snapshot != null) {
-        ref
-            .read(hotelStatusProvider.notifier)
-            .applyBackendRoomSnapshot(_demoRoomNumber, next.snapshot!);
-      }
-
-      ref
-          .read(demoRoomHotelSyncStatusProvider.notifier)
-          .state = DemoRoomHotelSyncStatus(
-        source: next.source,
-        targetUnreachable: next.targetUnreachable,
-        message: next.message,
-        reconnectAttempt: next.reconnectAttempt,
-      );
-    });
-  }
-
   Widget _buildControls(
     List<ZoneButton> zones,
     List<String> floors,
     List<RoomData> visibleRooms,
     DemoRoomHotelSyncStatus syncStatus,
+    {required bool hasLiveDemoMirror}
   ) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -253,7 +239,7 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
       ),
       child: Column(
         children: [
-          if (_selectedZoneId == _demoZoneId)
+          if (hasLiveDemoMirror)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(
@@ -325,6 +311,24 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
                 }),
               ),
               const SizedBox(width: 16),
+              FilledButton.icon(
+                onPressed: (_selectedZoneId == null || _selectedFloorId == null)
+                    ? null
+                    : () {
+                        context.go(
+                          Uri(
+                            path: '/floor-plan',
+                            queryParameters: {
+                              'zone': _selectedZoneId,
+                              'floor': _selectedFloorId,
+                            },
+                          ).toString(),
+                        );
+                      },
+                icon: const Icon(Icons.map_outlined, size: 18),
+                label: const Text('Floor Plan'),
+              ),
+              const SizedBox(width: 16),
               SizedBox(
                 width: 150,
                 child: TextField(
@@ -343,7 +347,7 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
                 onPressed: () {
                   final notifier = ref.read(hotelStatusProvider.notifier);
                   for (var room in visibleRooms) {
-                    if (room.number == _demoRoomNumber) {
+                    if (room.number == ref.read(mirroredDemoRoomNumberProvider)) {
                       ref
                           .read(roomSnapshotProvider(room.number).notifier)
                           .refreshNow();
@@ -518,11 +522,15 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
 
   Map<String, _ServiceOverlayState> _buildServiceOverlayMap(
     List<RoomServiceEntry> services,
+    {String? mirroredRoomNumber}
   ) {
     final map = <String, _ServiceOverlayState>{};
 
     for (final service in services) {
-      final key = service.roomNumber;
+      final key = service.roomNumber == demoBackendRoomNumber &&
+              mirroredRoomNumber != null
+          ? mirroredRoomNumber
+          : service.roomNumber;
       final current = map[key];
       final next = _applyServiceToOverlay(current, service);
       map[key] = next;
@@ -530,6 +538,23 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
 
     map.updateAll((_, value) => _normalizeServiceOverlay(value));
     return map;
+  }
+
+  void _syncMirroredDemoRoom(String? mirroredRoomNumber) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final notifier = ref.read(mirroredDemoRoomNumberProvider.notifier);
+      if (notifier.state != mirroredRoomNumber) {
+        if (kDebugMode) {
+          debugLog(
+            'HotelStatusPage: syncing mirrored demo room ${notifier.state} -> $mirroredRoomNumber',
+          );
+        }
+        notifier.state = mirroredRoomNumber;
+      }
+    });
   }
 
   _ServiceOverlayState _normalizeServiceOverlay(_ServiceOverlayState state) {
@@ -652,8 +677,6 @@ class _HvacDialog extends ConsumerStatefulWidget {
 }
 
 class _HvacDialogState extends ConsumerState<_HvacDialog> {
-  static const String _demoRoomNumber = 'Demo 101';
-
   late double _setPoint;
   late bool _isOn;
   late int _mode;
@@ -859,7 +882,16 @@ class _HvacDialogState extends ConsumerState<_HvacDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final syncStatus = ref.watch(demoRoomHotelSyncStatusProvider);
+    final effectiveBackendRoomNumber = ref.watch(
+      effectiveBackendRoomNumberProvider(widget.room.number),
+    );
+    final syncState = ref.watch(roomSnapshotProvider(widget.room.number));
+    final syncStatus = DemoRoomHotelSyncStatus(
+      source: syncState.source,
+      targetUnreachable: syncState.targetUnreachable,
+      message: syncState.message,
+      reconnectAttempt: syncState.reconnectAttempt,
+    );
     final runtimeRoom = ref.watch(roomRuntimeRoomViewProvider(widget.room.number));
     final room = runtimeRoom ?? _latestRoom ?? widget.room;
     final detail = room.hvacDetail;
@@ -910,8 +942,7 @@ class _HvacDialogState extends ConsumerState<_HvacDialog> {
                   ),
                 ],
               ),
-              if (widget.room.number.trim().toLowerCase() ==
-                  _demoRoomNumber.toLowerCase()) ...[
+              if (effectiveBackendRoomNumber == demoBackendRoomNumber) ...[
                 const SizedBox(height: 8),
                 Row(
                   children: [

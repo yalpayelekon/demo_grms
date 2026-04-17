@@ -4,6 +4,7 @@ import '../api/coordinates_api.dart';
 import '../api/room_control_api.dart';
 import '../config/app_config.dart';
 import 'auth_provider.dart';
+import 'room_alias_provider.dart';
 
 final appConfigProvider = Provider<AppConfig>((ref) => defaultAppConfig);
 
@@ -22,6 +23,9 @@ final roomControlApiProvider = Provider<RoomControlApi>((ref) {
   return RoomControlApi(
     baseUrl: config.apiBaseUrl,
     roleProvider: () async => authState.role.label,
+    roomNumberResolver: (roomNumber) => ref.read(
+      effectiveBackendRoomNumberProvider(roomNumber),
+    ),
   );
 });
 
