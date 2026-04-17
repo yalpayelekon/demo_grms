@@ -102,6 +102,7 @@ Launcher behavior:
   - `TESTCOMM_DB_PATH=<bundle>/backend/testcomm.db`
   - `TESTCOMM_PORT` (default `8082`)
   - `TESTCOMM_KILL_PREVIOUS=1` when unset
+- Honors `GRMS_OPEN_BROWSER=0` to skip opening a local browser window
 - Waits for `http://127.0.0.1:<port>/health`
 - Opens default browser at `http://127.0.0.1:<port>/`
 

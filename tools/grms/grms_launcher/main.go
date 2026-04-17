@@ -88,10 +88,14 @@ func main() {
 		log.Printf("Backend reported healthy.")
 	}
 
-	log.Printf("Opening browser at %s ...", baseURL)
-	if err := openBrowser(baseURL); err != nil {
-		log.Printf("failed to open browser: %v", err)
-		log.Printf("You can open the application manually at %s", baseURL)
+	if shouldOpenBrowser() {
+		log.Printf("Opening browser at %s ...", baseURL)
+		if err := openBrowser(baseURL); err != nil {
+			log.Printf("failed to open browser: %v", err)
+			log.Printf("You can open the application manually at %s", baseURL)
+		}
+	} else {
+		log.Printf("Browser auto-open disabled. Access the application at %s or via the device LAN IP.", baseURL)
 	}
 
 	// Keep launcher alive while backend runs.
@@ -138,6 +142,18 @@ func buildBackendEnv(webRoot, configDir, dbPath string, port int) []string {
 	}
 
 	return env
+}
+
+func shouldOpenBrowser() bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("GRMS_OPEN_BROWSER")))
+	switch v {
+	case "0", "false", "no", "off":
+		return false
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return true
+	}
 }
 
 func waitForHealth(url string, timeout time.Duration) error {

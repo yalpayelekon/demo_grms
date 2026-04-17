@@ -16,7 +16,11 @@ class _AppShellState extends ConsumerState<AppShell> {
   bool _isCollapsed = false;
 
   int _getSelectedIndex(String location) {
-    if (location.startsWith('/home')) return 1;
+    if (location.startsWith('/home') ||
+        location.startsWith('/zone-preview') ||
+        location.startsWith('/floor-plan')) {
+      return 1;
+    }
     if (location.startsWith('/hotel-status')) return 2;
     if (location.startsWith('/alarms')) return 3;
     if (location.startsWith('/service-status')) return 4;
