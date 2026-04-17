@@ -111,18 +111,18 @@ log "Preparing output directories..."
 mkdir -p "$BACKEND_OUT_DIR" "$FRONTEND_OUT_DIR" "$LAUNCHER_OUT_DIR"
 rm -rf "$BACKEND_OUT_DIR"/* "$FRONTEND_OUT_DIR"/* "$LAUNCHER_OUT_DIR"/*
 
-log "Starting parallel build jobs (Go backend + Flutter web)..."
+log "Building Go backend..."
 (
   cd "$TESTCOMM_PATH"
   env "${GO_BUILD_ENV[@]}" go build -o "$BACKEND_BIN_PATH" .
-) &
-GO_JOB_PID=$!
+)
 
+log "Building Flutter web app..."
 (
   cd "$FLUTTER_APP_PATH"
   flutter pub get
 
-  BUILD_ARGS=(build web --base-href / --dart-define=GREMS_DEPLOYMENT_MODE=deployed)
+  BUILD_ARGS=(build web --no-pub --base-href / --dart-define=GREMS_DEPLOYMENT_MODE=deployed)
   if [[ "$CONFIGURATION" == "release" ]]; then
     BUILD_ARGS+=(--release)
   fi
@@ -131,11 +131,7 @@ GO_JOB_PID=$!
   fi
 
   flutter "${BUILD_ARGS[@]}"
-) &
-FLUTTER_JOB_PID=$!
-
-wait "$GO_JOB_PID"
-wait "$FLUTTER_JOB_PID"
+)
 
 log "Copying backend config into bundle..."
 mkdir -p "$BACKEND_OUT_DIR/config"
