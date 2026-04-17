@@ -48,6 +48,7 @@ class ZonesState {
 }
 
 class ZonesNotifier extends Notifier<ZonesState> {
+  static const Set<String> _removedZoneIds = {'Block C', 'Villas'};
   static const List<String> _defaultDemoRooms = [
     '1001',
     '1002',
@@ -113,20 +114,6 @@ class ZonesNotifier extends Notifier<ZonesState> {
         yCoordinate: 510,
         active: true,
       ),
-      ZoneButton(
-        uiDisplayName: 'Block C',
-        buttonName: 'Block C',
-        xCoordinate: 890,
-        yCoordinate: 560,
-        active: true,
-      ),
-      ZoneButton(
-        uiDisplayName: 'Villas',
-        buttonName: 'Villas',
-        xCoordinate: 560,
-        yCoordinate: 250,
-        active: true,
-      ),
     ],
     polyPointsData: [
       PolygonData(
@@ -147,31 +134,10 @@ class ZonesNotifier extends Notifier<ZonesState> {
         ],
         fill: '#4D64D688',
       ),
-      PolygonData(
-        points: [
-          ZonePoint(x: 640, y: 410),
-          ZonePoint(x: 1110, y: 420),
-          ZonePoint(x: 1180, y: 730),
-          ZonePoint(x: 560, y: 780),
-          ZonePoint(x: 460, y: 610),
-        ],
-        fill: '#D6D84E88',
-      ),
-      PolygonData(
-        points: [
-          ZonePoint(x: 220, y: 90),
-          ZonePoint(x: 760, y: 110),
-          ZonePoint(x: 690, y: 360),
-          ZonePoint(x: 130, y: 330),
-        ],
-        fill: '#D08B2F88',
-      ),
     ],
     categoryNamesBlockFloorMap: {
       'Block A': _defaultFloors,
       'Block B': _defaultFloors,
-      'Block C': _defaultFloors,
-      'Villas': _defaultFloors,
     },
   );
 
@@ -200,7 +166,7 @@ class ZonesNotifier extends Notifier<ZonesState> {
       return;
     }
     try {
-      final parsed = ZonesData.fromJson(zonesJson);
+      final parsed = _sanitizeZonesData(ZonesData.fromJson(zonesJson));
       final nextZonesData = mergeIncomingCoordinatesIntoCurrent(
         current: state.zonesData,
         incomingCoordinates: parsed,
@@ -425,15 +391,16 @@ class ZonesNotifier extends Notifier<ZonesState> {
         engineeringJson: engineeringJson,
       );
       final metadata = ZonesData.fromJson(metadataJson);
+      final sanitizedMetadata = _sanitizeZonesData(metadata);
       final mergedButtons = mergeMetadataButtonsIntoCurrent(
         currentButtons: state.zonesData.homePageBlockButtons,
-        metadataButtons: metadata.homePageBlockButtons,
+        metadataButtons: sanitizedMetadata.homePageBlockButtons,
       );
       final merged = state.zonesData.copyWith(
-        schemaVersion: metadata.schemaVersion,
+        schemaVersion: sanitizedMetadata.schemaVersion,
         homePageBlockButtons: mergedButtons,
-        polyPointsData: metadata.polyPointsData,
-        categoryNamesBlockFloorMap: metadata.categoryNamesBlockFloorMap,
+        polyPointsData: sanitizedMetadata.polyPointsData,
+        categoryNamesBlockFloorMap: sanitizedMetadata.categoryNamesBlockFloorMap,
       );
       state = state.copyWith(zonesData: merged);
       _lastBackendZonesData = merged;
@@ -523,6 +490,55 @@ class ZonesNotifier extends Notifier<ZonesState> {
       updatedOccupancy[incoming.zoneId] = next;
       state = state.copyWith(occupancyById: updatedOccupancy);
     }
+  }
+
+  ZonesData _sanitizeZonesData(ZonesData data) {
+    final keptButtonsWithIndex = data.homePageBlockButtons
+        .asMap()
+        .entries
+        .where((entry) => !_removedZoneIds.contains(entry.value.buttonName))
+        .toList();
+    final keptButtons = keptButtonsWithIndex.map((entry) => entry.value).toList();
+
+    final hasOnePolygonPerButton =
+        data.polyPointsData.length == data.homePageBlockButtons.length;
+    final sanitizedPolygons = hasOnePolygonPerButton
+        ? keptButtonsWithIndex
+              .map((entry) => data.polyPointsData[entry.key])
+              .toList()
+        : data.polyPointsData;
+
+    final sanitizedCategoryMap = <String, Map<String, List<String>>>{};
+    for (final entry in data.categoryNamesBlockFloorMap.entries) {
+      if (_removedZoneIds.contains(entry.key)) {
+        continue;
+      }
+      sanitizedCategoryMap[entry.key] = entry.value;
+    }
+
+    final sanitizedFloorPositions = <String, Map<String, ZonePoint>>{};
+    for (final entry in data.floorButtonPositions.entries) {
+      if (_removedZoneIds.contains(entry.key)) {
+        continue;
+      }
+      sanitizedFloorPositions[entry.key] = entry.value;
+    }
+
+    final sanitizedRoomPositions = <String, Map<String, Map<String, ZonePoint>>>{};
+    for (final entry in data.roomButtonPositions.entries) {
+      if (_removedZoneIds.contains(entry.key)) {
+        continue;
+      }
+      sanitizedRoomPositions[entry.key] = entry.value;
+    }
+
+    return data.copyWith(
+      homePageBlockButtons: keptButtons,
+      polyPointsData: sanitizedPolygons,
+      categoryNamesBlockFloorMap: sanitizedCategoryMap,
+      floorButtonPositions: sanitizedFloorPositions,
+      roomButtonPositions: sanitizedRoomPositions,
+    );
   }
 }
 

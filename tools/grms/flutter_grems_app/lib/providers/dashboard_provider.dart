@@ -16,15 +16,9 @@ class DashboardState {
   final double? outsideTemp;
   final DashboardStats stats;
 
-  DashboardState({
-    this.outsideTemp,
-    required this.stats,
-  });
+  DashboardState({this.outsideTemp, required this.stats});
 
-  DashboardState copyWith({
-    double? outsideTemp,
-    DashboardStats? stats,
-  }) {
+  DashboardState copyWith({double? outsideTemp, DashboardStats? stats}) {
     return DashboardState(
       outsideTemp: outsideTemp ?? this.outsideTemp,
       stats: stats ?? this.stats,
@@ -38,7 +32,10 @@ class DashboardNotifier extends Notifier<DashboardState> {
   @override
   DashboardState build() {
     _fetchWeather();
-    _weatherTimer = Timer.periodic(const Duration(minutes: 30), (_) => _fetchWeather());
+    _weatherTimer = Timer.periodic(
+      const Duration(minutes: 30),
+      (_) => _fetchWeather(),
+    );
 
     ref.onDispose(() {
       _weatherTimer?.cancel();
@@ -77,35 +74,110 @@ class DashboardNotifier extends Notifier<DashboardState> {
     }).toList();
 
     // Occupancy Stats
-    final occupiedRooms = roomDataList.where((r) => r.status == RoomStatus.rentedOccupied).length;
-    final vacantRooms = roomDataList.where((r) => r.status == RoomStatus.rentedVacant || r.status == RoomStatus.unrentedVacant).length;
-    final housekeepingRooms = roomDataList.where((r) => r.status == RoomStatus.rentedHK || r.status == RoomStatus.unrentedHK).length;
-    final occupancyRate = totalRooms == 0 ? 0 : ((occupiedRooms / totalRooms) * 100).round();
+    final occupiedRooms = roomDataList
+        .where((r) => r.status == RoomStatus.rentedOccupied)
+        .length;
+    final vacantRooms = roomDataList
+        .where(
+          (r) =>
+              r.status == RoomStatus.rentedVacant ||
+              r.status == RoomStatus.unrentedVacant,
+        )
+        .length;
+    final housekeepingRooms = roomDataList
+        .where(
+          (r) =>
+              r.status == RoomStatus.rentedHK ||
+              r.status == RoomStatus.unrentedHK,
+        )
+        .length;
+    final occupancyRate = totalRooms == 0
+        ? 0
+        : ((occupiedRooms / totalRooms) * 100).round();
 
     // HVAC Stats
-    final cooling = roomDataList.where((r) => r.hvac == HvacStatus.cold).length;
-    final heating = roomDataList.where((r) => r.hvac == HvacStatus.hot).length;
-    final hvacOff = totalRooms - cooling - heating;
+    // Idle means the room temperature matches the set point.
+    const idleTolerance = 3.0;
+    var cooling = 0;
+    var heating = 0;
+    var idle = 0;
+    var hvacOff = 0;
+
+    for (final room in roomDataList) {
+      final detail = room.hvacDetail;
+      final roomTemp = detail?.roomTemperature;
+      final setPoint = detail?.setPoint;
+      final isHvacOff = room.hvac == HvacStatus.off || detail?.onOff == 0;
+
+      if (isHvacOff) {
+        hvacOff++;
+        continue;
+      }
+
+      if (roomTemp != null && setPoint != null) {
+        final diff = roomTemp - setPoint;
+        if (diff.abs() <= idleTolerance) {
+          idle++;
+        } else if (diff > 0) {
+          cooling++;
+        } else {
+          heating++;
+        }
+        continue;
+      }
+
+      // Fallback to existing HVAC state when detailed temperatures are unavailable.
+      if (room.hvac == HvacStatus.cold) {
+        cooling++;
+      } else if (room.hvac == HvacStatus.hot) {
+        heating++;
+      } else {
+        hvacOff++;
+      }
+    }
 
     final hvacStats = [
-      HvacStat(label: 'Cooling', rooms: cooling, percent: (cooling / totalRooms * 100).round()),
-      HvacStat(label: 'Off', rooms: hvacOff, percent: (hvacOff / totalRooms * 100).round()),
-      HvacStat(label: 'Heating', rooms: heating, percent: (heating / totalRooms * 100).round()),
+      HvacStat(
+        label: 'Idle',
+        rooms: idle,
+        percent: (idle / totalRooms * 100).round(),
+      ),
+      HvacStat(
+        label: 'Cooling',
+        rooms: cooling,
+        percent: (cooling / totalRooms * 100).round(),
+      ),
+      HvacStat(
+        label: 'Heating',
+        rooms: heating,
+        percent: (heating / totalRooms * 100).round(),
+      ),
+      HvacStat(
+        label: 'Off',
+        rooms: hvacOff,
+        percent: (hvacOff / totalRooms * 100).round(),
+      ),
     ];
 
     // Alarm Stats
-    final filteredAlarms = alarms.filteredAlarms.where((a) => a.status != AlarmStatus.fixed).toList();
+    final filteredAlarms = alarms.filteredAlarms
+        .where((a) => a.status != AlarmStatus.fixed)
+        .toList();
     final Map<String, int> alarmCounts = {};
     for (var alarm in filteredAlarms) {
       final category = _normalizeCategory(alarm.category);
       alarmCounts[category] = (alarmCounts[category] ?? 0) + 1;
     }
 
-    final alarmStats = alarmCounts.entries.map((e) => AlarmStat(
-      label: e.key,
-      count: e.value,
-      badgeClass: _getBadgeClass(e.key),
-    )).toList();
+    final alarmStats = alarmCounts.entries
+        .map(
+          (e) => AlarmStat(
+            label: e.key,
+            count: e.value,
+            badgeClass: _getBadgeClass(e.key),
+          ),
+        )
+        .toList();
 
     // Room Service Stats
     int lnd = 0;
@@ -115,8 +187,10 @@ class DashboardNotifier extends Notifier<DashboardState> {
     int totalActive = 0;
 
     for (var s in services) {
-      if (s.serviceType != ServiceType.laundry && s.serviceType != ServiceType.mur) continue;
-      
+      if (s.serviceType != ServiceType.laundry &&
+          s.serviceType != ServiceType.mur)
+        continue;
+
       final activeStates = {'Requested', 'Delayed', 'Started'};
       if (!activeStates.contains(s.serviceState)) continue;
 
@@ -127,7 +201,9 @@ class DashboardNotifier extends Notifier<DashboardState> {
       if (s.serviceState == 'Started') inProgress++;
     }
 
-    final responseRate = totalActive == 0 ? 100 : (((totalActive - delayed) / totalActive) * 100).round();
+    final responseRate = totalActive == 0
+        ? 100
+        : (((totalActive - delayed) / totalActive) * 100).round();
 
     return DashboardStats(
       totalRooms: totalRooms,
@@ -157,17 +233,22 @@ class DashboardNotifier extends Notifier<DashboardState> {
 
   String _getBadgeClass(String cat) {
     switch (cat) {
-      case 'Long Inact.': return 'badge-danger';
-      case 'Door Sys': return 'badge-danger';
-      case 'RCU': return 'badge-danger';
-      case 'Lighting': return 'badge-success';
-      default: return 'badge-warning';
+      case 'Long Inact.':
+        return 'badge-danger';
+      case 'Door Sys':
+        return 'badge-danger';
+      case 'RCU':
+        return 'badge-danger';
+      case 'Lighting':
+        return 'badge-success';
+      default:
+        return 'badge-warning';
     }
   }
 
   RoomData _generateMockState(String number) {
     final hash = number.hashCode;
-    
+
     return RoomData(
       number: number,
       status: RoomStatus.values[hash % RoomStatus.values.length],
@@ -182,8 +263,11 @@ class DashboardNotifier extends Notifier<DashboardState> {
 
   Future<void> _fetchWeather() async {
     try {
-      final response = await http.get(Uri.parse(
-          'https://api.open-meteo.com/v1/forecast?latitude=36.8969&longitude=30.7133&current=temperature_2m&timezone=auto'));
+      final response = await http.get(
+        Uri.parse(
+          'https://api.open-meteo.com/v1/forecast?latitude=36.8969&longitude=30.7133&current=temperature_2m&timezone=auto',
+        ),
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final temp = (data['current']['temperature_2m'] as num).toDouble();
@@ -197,5 +281,6 @@ class DashboardNotifier extends Notifier<DashboardState> {
   }
 }
 
-final dashboardProvider = NotifierProvider<DashboardNotifier, DashboardState>(DashboardNotifier.new);
-
+final dashboardProvider = NotifierProvider<DashboardNotifier, DashboardState>(
+  DashboardNotifier.new,
+);

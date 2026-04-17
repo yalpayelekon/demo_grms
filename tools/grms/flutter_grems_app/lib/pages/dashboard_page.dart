@@ -125,6 +125,7 @@ class DashboardPage extends ConsumerWidget {
                 Expanded(
                   child: _HvacPanel(
                     stats: stats.hvacStats,
+                    totalRooms: stats.totalRooms,
                     outsideTemp: state.outsideTemp,
                     compact: useCompactCards,
                   ),
@@ -154,6 +155,7 @@ class DashboardPage extends ConsumerWidget {
         const SizedBox(height: 24),
         _HvacPanel(
           stats: stats.hvacStats,
+          totalRooms: stats.totalRooms,
           outsideTemp: state.outsideTemp,
           compact: useCompactCards,
         ),
@@ -320,11 +322,23 @@ class _OccupancyPanel extends StatelessWidget {
       ),
       child: Column(
         children: [
-          _StatRow(label: 'Occupied', value: stats.occupiedRooms.toString(), color: Colors.blueAccent),
+          _StatRow(
+            label: 'Occupied',
+            value: '${stats.occupiedRooms} / ${stats.totalRooms}',
+            color: Colors.blueAccent,
+          ),
           const Divider(color: Colors.white10, height: 24),
-          _StatRow(label: 'Vacant', value: stats.vacantRooms.toString(), color: Colors.white70),
+          _StatRow(
+            label: 'Vacant',
+            value: '${stats.vacantRooms} / ${stats.totalRooms}',
+            color: Colors.white70,
+          ),
           const Divider(color: Colors.white10, height: 24),
-          _StatRow(label: 'Housekeeping', value: stats.housekeepingRooms.toString(), color: Colors.orangeAccent),
+          _StatRow(
+            label: 'Housekeeping',
+            value: '${stats.housekeepingRooms} / ${stats.totalRooms}',
+            color: Colors.orangeAccent,
+          ),
         ],
       ),
     );
@@ -394,10 +408,12 @@ class _ServicePanel extends StatelessWidget {
 
 class _HvacPanel extends StatelessWidget {
   final List<HvacStat> stats;
+  final int totalRooms;
   final double? outsideTemp;
   final bool compact;
   const _HvacPanel({
     required this.stats,
+    required this.totalRooms,
     required this.outsideTemp,
     this.compact = false,
   });
@@ -431,7 +447,12 @@ class _HvacPanel extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(stat.label, style: const TextStyle(color: Colors.white70)),
-                  Text('${stat.rooms} rooms', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                  Text(
+                    '${
+                        stat.rooms
+                      } / $totalRooms',
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
                 ],
               ),
               SizedBox(height: compact ? 6 : 8),
@@ -462,6 +483,7 @@ class _HvacPanel extends StatelessWidget {
 
   List<Color> _getHvacColors(String label) {
     if (label == 'Cooling') return [Colors.blue, Colors.cyan];
+    if (label == 'Idle') return [Colors.green, Colors.lightGreenAccent];
     if (label == 'Heating') return [Colors.red, Colors.orange];
     return [Colors.grey, Colors.blueGrey];
   }
