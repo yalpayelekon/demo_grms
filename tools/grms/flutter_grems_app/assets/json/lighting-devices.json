@@ -1,0 +1,74 @@
+[
+    {
+        "address": 9,
+        "x": 334,
+        "y": 133,
+        "name": "Yatak Sol"
+    },
+    {
+        "address": 10,
+        "x": 905,
+        "y": 233,
+        "name": "Yatak Sag"
+    },
+    {
+        "address": 8,
+        "x": 385,
+        "y": 230,
+        "name": "Gizli Ust"
+    },
+    {
+        "address": 17,
+        "x": 385,
+        "y": 500,
+        "name": "Masa Yemek"
+    },
+    {
+        "address": 58,
+        "x": 334,
+        "y": 580,
+        "name": "Spot Lambader"
+    },
+    {
+        "address": 12,
+        "x": 700,
+        "y": 500,
+        "name": "Masa"
+    },
+    {
+        "address": 15,
+        "x": 1080,
+        "y": 490,
+        "name": "Koridor Sol"
+    },
+    {
+        "address": 16,
+        "x": 1210,
+        "y": 490,
+        "name": "Koridor Sag"
+    },
+    {
+        "address": 11,
+        "x": 1120,
+        "y": 295,
+        "name": "Lavabo"
+    },
+    {
+        "address": 14,
+        "x": 1370,
+        "y": 300,
+        "name": "Klozet"
+    },
+    {
+        "address": 13,
+        "x": 980,
+        "y": 320,
+        "name": "Dus"
+    },
+    {
+        "address": 18,
+        "x": 650,
+        "y": 620,
+        "name": "Dolap"
+    }
+]

@@ -1,0 +1,87 @@
+# Go
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+go.sum
+
+# Go workspace file
+go.work.sum
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins-dependencies
+.metadata
+pubspec.lock
+/build/
+/coverage/
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# General
+*.log
+*.swp
+*.swo
+*~
+.env
+.env.local
+
+# Analysis
+analysis_utf8.txt
+analysis_v2_utf8.txt
+
+# Build outputs
+dist/
+build/
+bin/
+out/
+
+# Windows specific
+*.stackdump
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# Node modules (if any frontend builds are used)
+node_modules/
