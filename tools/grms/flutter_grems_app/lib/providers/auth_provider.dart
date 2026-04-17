@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -100,6 +99,7 @@ class AuthState {
 class AuthNotifier extends Notifier<AuthState> {
   static const String _storageKey = 'grems_auth';
   static const String _usersStorageKey = 'grems_users';
+  static const String _firstLaunchCompletedKey = 'grems_first_launch_completed';
 
   static final List<StoredUser> _defaultUsers = [
     StoredUser(
@@ -150,13 +150,24 @@ class AuthNotifier extends Notifier<AuthState> {
       }
     }
 
-    // Auto-login in debug mode if no user is loaded
-    if (kDebugMode && loadedUser == null) {
-      loadedUser = User(
-        username: 'test',
-        role: UserRole.viewer,
-        displayName: 'Test User',
+    // Auto-login test user only on the very first app opening.
+    final firstLaunchCompleted = prefs.getBool(_firstLaunchCompletedKey) ?? false;
+    if (!firstLaunchCompleted && loadedUser == null) {
+      final testUser = loadedUsers.cast<User?>().firstWhere(
+        (u) => u?.username == 'test',
+        orElse: () => null,
       );
+      if (testUser != null) {
+        loadedUser = User(
+          username: testUser.username,
+          role: testUser.role,
+          displayName: testUser.displayName,
+        );
+        await prefs.setString(_storageKey, jsonEncode(loadedUser.toJson()));
+      }
+    }
+    if (!firstLaunchCompleted) {
+      await prefs.setBool(_firstLaunchCompletedKey, true);
     }
 
     state = state.copyWith(

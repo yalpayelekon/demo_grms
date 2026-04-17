@@ -31,6 +31,7 @@ class HotelStatusPage extends ConsumerStatefulWidget {
 }
 
 class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
+  static const Set<String> _hotelStatusZones = {'Block A', 'Block B'};
   bool _showLighting = true;
   bool _showHVAC = true;
   bool _showRoomService = true;
@@ -59,7 +60,7 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
     final zonesData = zonesState.zonesData;
 
     final zones = zonesData.homePageBlockButtons
-        .where((z) => z.active)
+        .where((z) => z.active && _hotelStatusZones.contains(z.buttonName))
         .toList();
     final availableZoneIds = zones.map((z) => z.buttonName).toSet();
     if (_selectedZoneId == null ||

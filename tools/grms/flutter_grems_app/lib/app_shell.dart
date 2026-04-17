@@ -160,30 +160,54 @@ class _AppShellState extends ConsumerState<AppShell> {
             onPressed: () => setState(() => _isCollapsed = !_isCollapsed),
           ),
           const Spacer(),
-          // User Info
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                authState.user?.displayName ?? authState.user?.username ?? 'User',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              Text(
-                authState.role.label.toUpperCase(),
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
-                  letterSpacing: 1,
+          PopupMenuButton<String>(
+            tooltip: 'User menu',
+            onSelected: (value) {
+              if (value == 'switch-user') {
+                _handleLogout();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem<String>(
+                value: 'switch-user',
+                child: Row(
+                  children: [
+                    Icon(Icons.switch_account_outlined, size: 18),
+                    SizedBox(width: 10),
+                    Text('Switch user'),
+                  ],
                 ),
               ),
             ],
-          ),
-          const SizedBox(width: 16),
-          const CircleAvatar(
-            radius: 18,
-            backgroundColor: Colors.blue,
-            child: Icon(Icons.person, color: Colors.white, size: 20),
+            child: Row(
+              children: [
+                // User Info
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      authState.user?.displayName ?? authState.user?.username ?? 'User',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      authState.role.label.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 16),
+                const CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Colors.blue,
+                  child: Icon(Icons.person, color: Colors.white, size: 20),
+                ),
+              ],
+            ),
           ),
         ],
       ),

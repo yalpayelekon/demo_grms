@@ -14,6 +14,7 @@ class HomePage extends ConsumerStatefulWidget {
 }
 
 class _HomePageState extends ConsumerState<HomePage> {
+  static const Set<String> _clickableHomeZones = {'Block A', 'Block B'};
   final GlobalKey _mapKey = GlobalKey();
   final double _mapOriginalWidth = 1920;
   final double _mapOriginalHeight = 1080;
@@ -127,7 +128,9 @@ class _HomePageState extends ConsumerState<HomePage> {
   String? _resolveZoneFromMapPoint(ZonesData data, double mapX, double mapY) {
     ZoneButton? nearest;
     var minDistance = double.infinity;
-    for (final zone in data.homePageBlockButtons.where((z) => z.active)) {
+    for (final zone in data.homePageBlockButtons.where(
+      (z) => z.active && _clickableHomeZones.contains(z.buttonName),
+    )) {
       final dx = zone.xCoordinate - mapX;
       final dy = zone.yCoordinate - mapY;
       final d = dx * dx + dy * dy;
@@ -280,13 +283,17 @@ class _HomePageState extends ConsumerState<HomePage> {
             if (_zoneEditMode) {
               return;
             }
-            if (!_hasMovedSignificantly) {
-              final target = btn.active ? btn.buttonName : 'demo-rcu';
+            if (!_hasMovedSignificantly &&
+                btn.active &&
+                _clickableHomeZones.contains(btn.buttonName)) {
+              final target = btn.buttonName;
               context.push('/zone-preview?zone=${Uri.encodeComponent(target)}');
             }
           },
           child: MouseRegion(
-            cursor: btn.active || isAdmin
+            cursor:
+                ((btn.active && _clickableHomeZones.contains(btn.buttonName)) ||
+                    isAdmin)
                 ? SystemMouseCursors.click
                 : SystemMouseCursors.basic,
             child: Tooltip(

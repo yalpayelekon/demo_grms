@@ -850,9 +850,8 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
 
   static const Map<String, Offset> _defaultServiceIconCenters = {
     'dnd': Offset(1250, 205),
-    'mur': Offset(1320, 205),
-    'laundry': Offset(1390, 205),
-    'close': Offset(1460, 205),
+    'laundry': Offset(1320, 205),
+    'mur': Offset(1390, 205),
   };
 
   List<Widget> _buildServiceIconPins({
@@ -957,106 +956,9 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
 
     return <Widget>[
       buildOne(ServiceType.dnd),
-      buildOne(ServiceType.mur),
       buildOne(ServiceType.laundry),
-      _buildDummyCloseIconPin(canDrag: canDrag, iconSize: iconSize),
+      buildOne(ServiceType.mur),
     ];
-  }
-
-  Widget _buildDummyCloseIconPin({
-    required bool canDrag,
-    required double iconSize,
-  }) {
-    const typeKey = 'close';
-    final key = 'service-$typeKey';
-    final savedPositions = ref.watch(serviceIconPositionsProvider);
-    final center =
-        savedPositions[typeKey] ?? _defaultServiceIconCenters[typeKey];
-    if (center == null) {
-      return const SizedBox.shrink();
-    }
-
-    final centerX = _normalizeToCanvas(center.dx, _layoutCanvasWidth);
-    final centerY = _normalizeToCanvas(center.dy, _layoutCanvasHeight);
-    final dragOffset = _dragCanvasPositions[key];
-    final left =
-        dragOffset?.dx ??
-        _clamp(centerX - (iconSize / 2), 0, _layoutCanvasWidth - iconSize);
-    final top =
-        dragOffset?.dy ??
-        _clamp(centerY - (iconSize / 2), 0, _layoutCanvasHeight - iconSize);
-
-    return Positioned(
-      left: left,
-      top: top,
-      child: GestureDetector(
-        onPanStart: canDrag
-            ? (_) {
-                setState(() {
-                  _draggingKey = key;
-                  _dragCanvasPositions[key] = Offset(left, top);
-                  _layoutFocusNode.requestFocus();
-                });
-              }
-            : null,
-        onPanUpdate: canDrag
-            ? (details) {
-                final local = _globalToCanvasPoint(details.globalPosition);
-                if (local == null) {
-                  return;
-                }
-                final offset = Offset(
-                  _clamp(
-                    local.dx - (iconSize / 2),
-                    0,
-                    _layoutCanvasWidth - iconSize,
-                  ),
-                  _clamp(
-                    local.dy - (iconSize / 2),
-                    0,
-                    _layoutCanvasHeight - iconSize,
-                  ),
-                );
-                setState(() {
-                  _dragCanvasPositions[key] = offset;
-                });
-              }
-            : null,
-        onPanEnd: canDrag
-            ? (_) async {
-                if (_draggingKey != key) {
-                  return;
-                }
-                await _persistDraggedServiceIcon(
-                  serviceType: typeKey,
-                  key: key,
-                  iconSize: iconSize,
-                );
-              }
-            : null,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          width: iconSize,
-          height: iconSize,
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.20),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: canDrag
-                  ? Colors.lightBlueAccent
-                  : Colors.white.withOpacity(0.35),
-              width: canDrag ? 2 : 1,
-            ),
-          ),
-          child: Icon(
-            Icons.power_settings_new,
-            color: Colors.white,
-            size: iconSize - 4,
-          ),
-        ),
-      ),
-    );
   }
 
   String _serviceStateFor(
