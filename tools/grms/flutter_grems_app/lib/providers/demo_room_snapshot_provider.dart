@@ -111,8 +111,8 @@ class RoomSnapshotNotifier
       (previous, next) {
         _applyProxyState(next, backendRoomNumber);
       },
+      fireImmediately: true,
     );
-    _applyProxyState(ref.read(sourceProvider), backendRoomNumber);
   }
 
   void _start() {
@@ -393,7 +393,7 @@ class RoomSnapshotNotifier
             receivedAt:
                 sourceState.runtimeSnapshot?.receivedAt ?? DateTime.now(),
           );
-    state = state.copyWith(
+    state = const DemoRoomSnapshotState().copyWith(
       snapshot: proxiedSnapshot,
       runtimeSnapshot: proxiedRuntimeSnapshot,
       clearSnapshot: proxiedSnapshot == null,

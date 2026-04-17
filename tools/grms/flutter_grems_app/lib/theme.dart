@@ -14,6 +14,7 @@ ThemeData buildAppTheme() {
 
   return ThemeData(
     useMaterial3: true,
+    fontFamily: 'Arial',
     colorScheme: scheme,
     scaffoldBackgroundColor: background,
     cardColor: card,
