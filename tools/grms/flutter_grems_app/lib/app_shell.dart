@@ -77,7 +77,12 @@ class _AppShellState extends ConsumerState<AppShell> {
             child: Row(
               mainAxisAlignment: _isCollapsed ? MainAxisAlignment.center : MainAxisAlignment.start,
               children: [
-                const Icon(Icons.apartment_rounded, color: Colors.blue, size: 32),
+                Image.asset(
+                  'assets/images/vanpeelogo.png',
+                  width: _isCollapsed ? 34 : 40,
+                  height: _isCollapsed ? 34 : 40,
+                  fit: BoxFit.contain,
+                ),
                 if (!_isCollapsed) ...[
                   const SizedBox(width: 12),
                   const Text(

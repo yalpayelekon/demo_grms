@@ -8,6 +8,8 @@ class RoomCard extends StatelessWidget {
   static const double _topIconSize = 20;
   static const double _serviceIconSize = 20;
   static const double _serviceStripHeight = 24;
+  static const double _iconVerticalOffset = 5;
+  static const double _roomNumberVerticalOffset = 2;
 
   final RoomData room;
   final bool showLighting;
@@ -32,31 +34,33 @@ class RoomCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onCardTap,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(_cornerRadius),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.18),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(_cornerRadius),
-          child: Column(
-            children: [
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    image: DecorationImage(
-                      image: AssetImage(_getBackgroundImage()),
-                      fit: BoxFit.cover,
-                    ),
+      child: Column(
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(_cornerRadius),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.18),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
                   ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(_cornerRadius),
+                child: Container(
+                  color: Colors.black.withOpacity(0.06),
                   child: Stack(
                     children: [
+                      Positioned.fill(
+                        child: Image.asset(
+                          _getBackgroundImage(),
+                          fit: BoxFit.contain,
+                          alignment: Alignment.topCenter,
+                        ),
+                      ),
                       // Top row: Lighting icon, room number, HVAC icon
                       Positioned(
                         top: _topInset,
@@ -78,9 +82,15 @@ class RoomCard extends StatelessWidget {
                             Expanded(
                               child: Align(
                                 alignment: const Alignment(0.2, 0),
-                                child: Text(
-                                  room.number,
-                                  style: _buildRoomNumberTextStyle(),
+                                child: Transform.translate(
+                                  offset: const Offset(
+                                    0,
+                                    _roomNumberVerticalOffset,
+                                  ),
+                                  child: Text(
+                                    room.number,
+                                    style: _buildRoomNumberTextStyle(),
+                                  ),
                                 ),
                               ),
                             ),
@@ -101,24 +111,23 @@ class RoomCard extends StatelessWidget {
                   ),
                 ),
               ),
-              if (showRoomService)
-                Container(
-                  key: const ValueKey('room-service-strip'),
-                  height: _serviceStripHeight,
-                  width: double.infinity,
-                  color: Colors.black,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _buildServiceIcon(_getDndIcon()),
-                      _buildServiceIcon(_getMurIcon()),
-                      _buildServiceIcon(_getLaundryIcon()),
-                    ],
-                  ),
-                ),
-            ],
+            ),
           ),
-        ),
+          if (showRoomService)
+            SizedBox(
+              key: const ValueKey('room-service-strip'),
+              height: _serviceStripHeight,
+              width: double.infinity,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildServiceIcon(_getDndIcon()),
+                  _buildServiceIcon(_getMurIcon()),
+                  _buildServiceIcon(_getLaundryIcon()),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -128,17 +137,23 @@ class RoomCard extends StatelessWidget {
       onTap: onTap,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
-        child: Image.asset(asset, width: _topIconSize, height: _topIconSize),
+        child: Transform.translate(
+          offset: const Offset(0, _iconVerticalOffset),
+          child: Image.asset(asset, width: _topIconSize, height: _topIconSize),
+        ),
       ),
     );
   }
 
   Widget _buildServiceIcon(String asset) {
-    return Image.asset(
-      asset,
-      width: _serviceIconSize,
-      height: _serviceIconSize,
-      fit: BoxFit.contain,
+    return Transform.translate(
+      offset: const Offset(0, _iconVerticalOffset),
+      child: Image.asset(
+        asset,
+        width: _serviceIconSize,
+        height: _serviceIconSize,
+        fit: BoxFit.contain,
+      ),
     );
   }
 

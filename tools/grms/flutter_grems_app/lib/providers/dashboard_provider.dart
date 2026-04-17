@@ -188,8 +188,9 @@ class DashboardNotifier extends Notifier<DashboardState> {
 
     for (var s in services) {
       if (s.serviceType != ServiceType.laundry &&
-          s.serviceType != ServiceType.mur)
+          s.serviceType != ServiceType.mur) {
         continue;
+      }
 
       final activeStates = {'Requested', 'Delayed', 'Started'};
       if (!activeStates.contains(s.serviceState)) continue;

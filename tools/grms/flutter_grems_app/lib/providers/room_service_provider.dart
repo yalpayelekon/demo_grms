@@ -260,6 +260,34 @@ class RoomServiceNotifier extends Notifier<List<RoomServiceEntry>> {
     }
   }
 
+  void applyServiceAction({
+    required String roomNumber,
+    required ServiceType serviceType,
+    required String serviceState,
+  }) {
+    final now = DateTime.now();
+    final activationTime = DateFormat('yyyy-MM-dd HH:mm').format(now);
+    final eventTimestamp = now.millisecondsSinceEpoch;
+    final acknowledgement = _defaultAckForState(serviceType, serviceState);
+    final entry = RoomServiceEntry(
+      id: 'manual-$roomNumber-${serviceType.label}-$eventTimestamp',
+      roomNumber: roomNumber,
+      floor: _floorFromRoom(roomNumber),
+      serviceType: serviceType,
+      serviceState: serviceState,
+      activationTime: activationTime,
+      eventTimestamp: eventTimestamp,
+      delayedMinutes: 0,
+      acknowledgement: acknowledgement,
+      acknowledgementTime: null,
+      note: 'manual_action',
+    );
+
+    final nextState = applyCrossCancelOnNewEntry(state, entry);
+    _logPolicyNotes(nextState);
+    state = nextState.length > 100 ? nextState.sublist(0, 100) : nextState;
+  }
+
   @visibleForTesting
   void setEntriesForTesting(List<RoomServiceEntry> entries) {
     state = entries;

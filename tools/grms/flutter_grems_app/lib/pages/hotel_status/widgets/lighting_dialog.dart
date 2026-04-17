@@ -51,19 +51,19 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
   LightingDevicesResponse? _lightingResponse;
   String? _activeDeviceKey;
   final Map<String, TextEditingController> _deviceLevelControllers = {};
-  final Map<String, String> _deviceSubmitStatus = {};
   int? _lastTriggeredScene;
   bool _isEditMode = false;
-  late double _setPoint;
-  late bool _isOn;
-  late int _mode;
-  late int _fanMode;
-  late double _initialSetPoint;
-  late bool _initialIsOn;
-  late int _initialMode;
-  late int _initialFanMode;
+  double _setPoint = 22.0;
+  bool _isOn = false;
+  int _mode = 0;
+  int _fanMode = 4;
+  double _initialSetPoint = 22.0;
+  bool _initialIsOn = false;
+  int _initialMode = 0;
+  int _initialFanMode = 4;
   bool _savingHvac = false;
   bool _loadingHvac = false;
+  bool _updatingBlinds = false;
   final GlobalKey _layoutStackKey = GlobalKey();
   final Map<String, Offset> _dragCanvasPositions = <String, Offset>{};
   String? _draggingKey;
@@ -299,7 +299,9 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     setState(() => _savingHvac = false);
     if (result is Failure<void>) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update HVAC: ${result.error.message}')),
+        SnackBar(
+          content: Text('Failed to update HVAC: ${result.error.message}'),
+        ),
       );
       return;
     }
@@ -349,58 +351,6 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     return ref.read(roomRuntimeRoomViewProvider(widget.room.number)) ??
         ref.read(hotelStatusProvider).rooms[widget.room.number] ??
         widget.room;
-  }
-
-  Future<void> _handleDeviceSubmit(LightingDeviceSummary device) async {
-    final key = '${device.type.name}-${device.address}';
-    final level = int.tryParse(_deviceLevelControllers[key]?.text ?? '0');
-    final lightingNotifier = ref.read(
-      roomLightingRuntimeProvider(widget.room.number).notifier,
-    );
-    final requestId =
-        '${widget.room.number}-level-${device.type.name}-${device.address}-${DateTime.now().microsecondsSinceEpoch}';
-
-    if (level == null) {
-      setState(() => _deviceSubmitStatus[key] = 'error');
-      return;
-    }
-
-    lightingNotifier.startDeviceWrite(device, level, requestId);
-    setState(() => _deviceSubmitStatus[key] = 'saving');
-
-    final api = ref.read(roomControlApiProvider);
-    final result = await api.setLightingLevel(
-      widget.room.number,
-      device.address,
-      level,
-      type: device.type,
-    );
-
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      if (result is Success<void>) {
-        lightingNotifier.ackDeviceWrite(device, requestId);
-        _deviceSubmitStatus[key] = 'saved';
-        if (kDebugMode) {
-          debugPrint(
-            'LightingDialog: set level success room=${widget.room.number} '
-            'address=${device.address} level=$level',
-          );
-        }
-      } else if (result is Failure<void>) {
-        lightingNotifier.failDeviceWrite(device, requestId);
-        _deviceSubmitStatus[key] = 'error';
-        _errorMessage = result.error.message;
-        if (kDebugMode) {
-          debugPrint(
-            'LightingDialog: set level failed room=${widget.room.number} '
-            'address=${device.address} error=${result.error.message}',
-          );
-        }
-      }
-    });
   }
 
   Future<void> _triggerScene(int scene) async {
@@ -455,8 +405,12 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     final authState = ref.watch(authProvider);
     final isAdmin = authState.user?.role == UserRole.admin;
     final isViewer = authState.user?.role == UserRole.viewer;
+    final isTestUser = authState.user?.username.toLowerCase() == 'test';
     final showVisualLayout = isViewer || isAdmin;
-    final dialogWidth = math.min(MediaQuery.of(context).size.width * 0.96, 1880.0);
+    final dialogWidth = math.min(
+      MediaQuery.of(context).size.width * 0.96,
+      1880.0,
+    );
     final isCompactTablet = dialogWidth < 1150;
 
     return Dialog(
@@ -483,6 +437,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
               child: showVisualLayout
                   ? _buildVisualLayout(
                       isAdmin: isAdmin,
+                      isTestUser: isTestUser,
                       isCompactTablet: isCompactTablet,
                     )
                   : _buildConsoleLayout(),
@@ -538,16 +493,10 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
 
   Widget _buildVisualLayout({
     required bool isAdmin,
+    required bool isTestUser,
     required bool isCompactTablet,
   }) {
     final mergedDevices = _buildMergedDevices();
-    final activeDevice = mergedDevices.isEmpty
-        ? null
-        : mergedDevices.firstWhere(
-            (device) =>
-                '${device.type.name}-${device.address}' == _activeDeviceKey,
-            orElse: () => mergedDevices.first,
-          );
     final sideFlex = isCompactTablet ? 4 : 3;
 
     final room = _latestRoom;
@@ -618,6 +567,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
                             room: room,
                             entries: serviceEntries,
                             isAdmin: isAdmin,
+                            isVisible: !isTestUser,
                           ),
                         ],
                       ),
@@ -650,15 +600,14 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
                   child: Column(
                     children: [
                       Expanded(
-                        flex: 4,
+                        flex: 3,
                         child: Row(
                           children: [
                             Expanded(child: _buildSceneControlCard()),
                             const SizedBox(width: 10),
                             Expanded(
-                              child: _buildLightingDevicesCard(
-                                activeDevice: activeDevice,
-                                isAdmin: isAdmin,
+                              child: _buildBlindsControlCard(
+                                showEditPositionsToggle: !isTestUser,
                               ),
                             ),
                           ],
@@ -666,7 +615,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
                       ),
                       const SizedBox(height: 10),
                       Expanded(
-                        flex: 6,
+                        flex: 7,
                         child: Row(
                           children: [
                             Expanded(child: _buildHvacCard(room)),
@@ -695,10 +644,8 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     );
   }
 
-  Widget _buildLightingDevicesCard({
-    required LightingDeviceSummary? activeDevice,
-    required bool isAdmin,
-  }) {
+  Widget _buildBlindsControlCard({required bool showEditPositionsToggle}) {
+    final blindsCount = _buildMergedDevices().where(_isBlindDevice).length;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -710,7 +657,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Lighting Devices',
+            'Blinds Control',
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w700,
@@ -718,31 +665,39 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
             ),
           ),
           const SizedBox(height: 8),
-          if (activeDevice != null)
-            _buildDeviceCard(
-              activeDevice,
-              canControl: isAdmin,
-              compact: true,
-            )
-          else
-            Text(
-              'No devices available',
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.65),
-                fontSize: 12,
-              ),
-            ),
-          const SizedBox(height: 8),
           Text(
-            'Power Consumption: ${_formatPowerConsumption(activeDevice)}',
+            blindsCount > 0
+                ? '$blindsCount blind device${blindsCount == 1 ? '' : 's'} detected'
+                : 'No blind devices found',
             style: TextStyle(
+              color: Colors.white.withOpacity(0.65),
               fontSize: 12,
-              color: Colors.white.withOpacity(0.75),
-              fontWeight: FontWeight.w600,
             ),
           ),
-          if (isAdmin) ...[
-            const SizedBox(height: 8),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.tonal(
+                  onPressed: _updatingBlinds
+                      ? null
+                      : () => _setBlindsLevel(targetLevel: 100),
+                  child: const Text('Open'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.tonal(
+                  onPressed: _updatingBlinds
+                      ? null
+                      : () => _setBlindsLevel(targetLevel: 0),
+                  child: const Text('Close'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (showEditPositionsToggle)
             SwitchListTile(
               dense: true,
               visualDensity: VisualDensity.compact,
@@ -775,15 +730,71 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
               },
               contentPadding: EdgeInsets.zero,
             ),
-          ],
         ],
       ),
     );
   }
 
+  bool _isBlindDevice(LightingDeviceSummary device) {
+    final haystack = '${device.name} ${device.feature ?? ''}'.toLowerCase();
+    return haystack.contains('blind') ||
+        haystack.contains('curtain') ||
+        haystack.contains('shade');
+  }
+
+  Future<void> _setBlindsLevel({required int targetLevel}) async {
+    final blindDevices = _buildMergedDevices().where(_isBlindDevice).toList();
+    if (blindDevices.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No blinds devices found for this room.'),
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() => _updatingBlinds = true);
+    final api = ref.read(roomControlApiProvider);
+    String? firstError;
+    for (final device in blindDevices) {
+      final result = await api.setLightingLevel(
+        widget.room.number,
+        device.address,
+        targetLevel,
+        type: device.type,
+      );
+      if (result is Failure<void>) {
+        firstError ??= result.error.message;
+      }
+    }
+
+    if (!mounted) {
+      return;
+    }
+    setState(() => _updatingBlinds = false);
+    if (firstError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Blinds update failed: $firstError')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            targetLevel > 0
+                ? 'Blinds opened successfully.'
+                : 'Blinds closed successfully.',
+          ),
+        ),
+      );
+    }
+  }
+
   Widget _buildHvacCard(RoomData room) {
     final detail = room.hvacDetail;
-    final running = (detail?.onOff ?? (room.hvac == HvacStatus.off ? 0 : 1)) == 1;
+    final running =
+        (detail?.onOff ?? (room.hvac == HvacStatus.off ? 0 : 1)) == 1;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -818,7 +829,9 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
                 ),
               ),
               const SizedBox(width: 8),
-              Expanded(child: _buildStatChip('Running', running ? 'On' : 'Off')),
+              Expanded(
+                child: _buildStatChip('Running', running ? 'On' : 'Off'),
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -964,24 +977,27 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
           ),
           const SizedBox(height: 10),
           _serviceRow(
+            roomNumber: room.number,
+            serviceType: ServiceType.dnd,
             title: 'DND',
             entry: dndEntry,
             fallbackState: room.dnd.label,
-            allowAck: false,
           ),
           const SizedBox(height: 8),
           _serviceRow(
+            roomNumber: room.number,
+            serviceType: ServiceType.mur,
             title: 'MUR',
             entry: murEntry,
             fallbackState: room.mur.label,
-            allowAck: true,
           ),
           const SizedBox(height: 8),
           _serviceRow(
+            roomNumber: room.number,
+            serviceType: ServiceType.laundry,
             title: 'Laundry',
             entry: laundryEntry,
             fallbackState: room.laundry.label,
-            allowAck: true,
           ),
         ],
       ),
@@ -989,17 +1005,20 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
   }
 
   Widget _serviceRow({
+    required String roomNumber,
+    required ServiceType serviceType,
     required String title,
     required RoomServiceEntry? entry,
     required String fallbackState,
-    required bool allowAck,
   }) {
     final stateText = entry?.serviceState ?? fallbackState;
     final timestampText = entry?.activationTime ?? '-';
-    final canToggle =
-        allowAck &&
-        entry != null &&
-        entry.acknowledgement != ServiceAcknowledgement.none;
+    final actionLabels = ('On', 'Off');
+    final actionStates = switch (serviceType) {
+      ServiceType.dnd => ('On', 'Off'),
+      ServiceType.mur => ('Requested', 'Finished'),
+      ServiceType.laundry => ('Requested', 'Finished'),
+    };
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -1032,46 +1051,52 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
               ],
             ),
           ),
-          if (canToggle)
-            InkWell(
-              onTap: () => ref
-                  .read(roomServiceProvider.notifier)
-                  .toggleAcknowledgement(entry.id),
-              borderRadius: BorderRadius.circular(6),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(6),
-                  color:
-                      entry.acknowledgement == ServiceAcknowledgement.acknowledged
-                      ? Colors.green.withOpacity(0.18)
-                      : Colors.red.withOpacity(0.18),
-                ),
-                child: Text(
-                  entry.acknowledgement.label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color:
-                        entry.acknowledgement ==
-                            ServiceAcknowledgement.acknowledged
-                        ? Colors.greenAccent
-                        : Colors.redAccent,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+          const SizedBox(width: 6),
+          SizedBox(
+            width: 66,
+            child: FilledButton.tonal(
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               ),
-            )
-          else
-            Text('-', style: TextStyle(color: Colors.white.withOpacity(0.6))),
+              onPressed: () => ref
+                  .read(roomServiceProvider.notifier)
+                  .applyServiceAction(
+                    roomNumber: roomNumber,
+                    serviceType: serviceType,
+                    serviceState: actionStates.$1,
+                  ),
+              child: Text(
+                actionLabels.$1,
+                style: const TextStyle(fontSize: 11),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          SizedBox(
+            width: 66,
+            child: FilledButton.tonal(
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              ),
+              onPressed: () => ref
+                  .read(roomServiceProvider.notifier)
+                  .applyServiceAction(
+                    roomNumber: roomNumber,
+                    serviceType: serviceType,
+                    serviceState: actionStates.$2,
+                  ),
+              child: Text(
+                actionLabels.$2,
+                style: const TextStyle(fontSize: 11),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _serviceIconTile({
-    required String label,
-    required String iconPath,
-  }) {
+  Widget _serviceIconTile({required String label, required String iconPath}) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
@@ -1136,6 +1161,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
       3: 'TV',
       4: 'Dining',
       5: 'Night',
+      6: 'Off',
     };
 
     return Container(
@@ -1354,7 +1380,11 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     required RoomData room,
     required List<RoomServiceEntry> entries,
     required bool isAdmin,
+    required bool isVisible,
   }) {
+    if (!isVisible) {
+      return const <Widget>[];
+    }
     final savedPositions = ref.watch(serviceIconPositionsProvider);
     final iconSize = 26.0 * _pinScale;
     final canDrag = isAdmin && _isEditMode;
@@ -1601,200 +1631,6 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
       return (source / legacyMax) * canvasSize;
     }
     return math.max(0, source);
-  }
-
-  String _formatPowerConsumption(LightingDeviceSummary? device) {
-    final power = device?.powerW;
-    if (power == null || power.isNaN || power.isInfinite || power < 0) {
-      return '-';
-    }
-    if (power == power.roundToDouble()) {
-      return '${power.toStringAsFixed(0)} W';
-    }
-    return '${power.toStringAsFixed(1)} W';
-  }
-
-  Widget _buildDeviceCard(
-    LightingDeviceSummary device, {
-    required bool canControl,
-    bool compact = false,
-  }) {
-    final key = '${device.type.name}-${device.address}';
-    final status = _deviceSubmitStatus[key] ?? 'idle';
-    final actualLevel = device.actualLevel.round();
-    final commandedLevel = (device.targetLevel ?? device.actualLevel).round();
-    final hasPendingTarget = commandedLevel > 0 && actualLevel == 0;
-    final deviceMetaText = 'Actual: $actualLevel';
-    final isAlarm = device.alarm;
-    final alarmText = lightingAlarmLabel(device);
-    final displayName = displayLightingDeviceName(device);
-
-    return Container(
-      padding: EdgeInsets.all(compact ? 10 : 16),
-      decoration: BoxDecoration(
-        color: isAlarm
-            ? const Color(0xFFD32F2F).withOpacity(0.12)
-            : Colors.white.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isAlarm
-              ? const Color(0xFFFF5252)
-              : Colors.white.withOpacity(0.1),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  displayName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: compact ? 14 : 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-              if (alarmText != null) ...[
-                const SizedBox(width: 8),
-                Tooltip(
-                  message: alarmText,
-                  child: const Icon(
-                    Icons.warning_amber_rounded,
-                    color: Color(0xFFFF8A80),
-                    size: 18,
-                  ),
-                ),
-              ],
-            ],
-          ),
-          SizedBox(height: compact ? 4 : 8),
-          if (!compact)
-            Row(
-              children: [
-                Text(
-                  'Address: ${device.address}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.white.withOpacity(0.6),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Text(
-                    deviceMetaText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.white.withOpacity(0.6),
-                    ),
-                  ),
-                ),
-              ],
-            )
-          else
-            Text(
-              'Address:${device.address}   $deviceMetaText',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.white.withOpacity(0.6),
-              ),
-            ),
-          if (hasPendingTarget) ...[
-            SizedBox(height: compact ? 4 : 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.amber.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.amber.withOpacity(0.6)),
-              ),
-              child: Text(
-                'Pending/Not reached',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.amber.shade200,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-          SizedBox(height: compact ? 6 : 16),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final availableWidth = constraints.maxWidth;
-              final requestedFieldWidth = compact ? 64.0 : 84.0;
-              final targetFieldWidth = math.max(
-                64.0,
-                math.min(requestedFieldWidth, availableWidth),
-              );
-              final isStacked = availableWidth < 185;
-
-              if (isStacked) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: targetFieldWidth,
-                      child: TextField(
-                        controller: _deviceLevelControllers[key],
-                        keyboardType: TextInputType.number,
-                        maxLength: 3,
-                        decoration: const InputDecoration(
-                          labelText: 'Target',
-                          isDense: true,
-                          counterText: '',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () => _handleDeviceSubmit(device),
-                        child: Text(status == 'saving' ? '...' : 'Set Level'),
-                      ),
-                    ),
-                  ],
-                );
-              }
-
-              return Row(
-                children: [
-                  SizedBox(
-                    width: targetFieldWidth,
-                    child: TextField(
-                      controller: _deviceLevelControllers[key],
-                      keyboardType: TextInputType.number,
-                      maxLength: 3,
-                      decoration: const InputDecoration(
-                        labelText: 'Target',
-                        isDense: true,
-                        counterText: '',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => _handleDeviceSubmit(device),
-                      child: Text(status == 'saving' ? '...' : 'Set Level'),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
-    );
   }
 
   Offset? _globalToCanvasPoint(Offset globalPosition) {
