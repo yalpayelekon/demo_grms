@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/dashboard_provider.dart';
+import '../providers/hotel_status_provider.dart';
+import '../providers/room_service_provider.dart';
+import '../providers/coordinates_sync_provider.dart';
 import '../models/dashboard_models.dart';
 import '../widgets/energy_savings_chart.dart';
 
@@ -11,6 +14,9 @@ class DashboardPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final dashboardState = ref.watch(dashboardProvider);
     final stats = dashboardState.stats;
+    final hotelSync = ref.watch(demoRoomHotelSyncStatusProvider);
+    final serviceSync = ref.watch(demoRoomServiceSyncStatusProvider);
+    final coordinatesSync = ref.watch(coordinatesSyncProvider);
     final size = MediaQuery.of(context).size;
     final isWideDesktop = size.width > 1200;
     final canUseFixedDesktopGrid = isWideDesktop && size.height > 860;
@@ -46,6 +52,9 @@ class DashboardPage extends ConsumerWidget {
                               context,
                               stats,
                               dashboardState,
+                              hotelSync: hotelSync,
+                              serviceSync: serviceSync,
+                              coordinatesSync: coordinatesSync,
                               isDesktop: true,
                               useCompactCards: useCompactCards,
                             ),
@@ -65,6 +74,9 @@ class DashboardPage extends ConsumerWidget {
                                 context,
                                 stats,
                                 dashboardState,
+                                hotelSync: hotelSync,
+                                serviceSync: serviceSync,
+                                coordinatesSync: coordinatesSync,
                                 isDesktop: false,
                                 useCompactCards: true,
                               ),
@@ -84,9 +96,35 @@ class DashboardPage extends ConsumerWidget {
     BuildContext context,
     DashboardStats stats,
     DashboardState state, {
+    required DemoRoomHotelSyncStatus hotelSync,
+    required DemoRoomServiceSyncStatus serviceSync,
+    required CoordinatesSyncState coordinatesSync,
     required bool isDesktop,
     required bool useCompactCards,
   }) {
+    final communicationItems = <_CommunicationItem>[
+      _CommunicationItem(
+        label: 'RCU Link',
+        value: hotelSync.targetUnreachable ? 'Offline' : 'Online',
+        online: !hotelSync.targetUnreachable,
+      ),
+      _CommunicationItem(
+        label: 'Service Bus',
+        value: serviceSync.connected ? 'Online' : 'Offline',
+        online: serviceSync.connected && !serviceSync.targetUnreachable,
+      ),
+      _CommunicationItem(
+        label: 'Coordinates',
+        value: coordinatesSync.connected ? 'Online' : 'Offline',
+        online: coordinatesSync.connected,
+      ),
+      _CommunicationItem(
+        label: 'PMS',
+        value: 'Online',
+        online: true,
+      ),
+    ];
+
     if (isDesktop) {
       return Column(
         children: [
@@ -95,12 +133,35 @@ class DashboardPage extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Expanded(
+                  child: _CommunicationPanel(
+                    items: communicationItems,
+                    compact: useCompactCards,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
                   child: _AlarmPanel(
                     stats: stats.alarmStats,
                     compact: useCompactCards,
                   ),
                 ),
                 const SizedBox(width: 16),
+                Expanded(
+                  child: _HvacPanel(
+                    stats: stats.hvacStats,
+                    totalRooms: stats.totalRooms,
+                    outsideTemp: state.outsideTemp,
+                    compact: useCompactCards,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                 Expanded(
                   child: _OccupancyPanel(
                     stats: stats,
@@ -114,25 +175,8 @@ class DashboardPage extends ConsumerWidget {
                     compact: useCompactCards,
                   ),
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: _HvacPanel(
-                    stats: stats.hvacStats,
-                    totalRooms: stats.totalRooms,
-                    outsideTemp: state.outsideTemp,
-                    compact: useCompactCards,
-                  ),
-                ),
                 const SizedBox(width: 16),
                 Expanded(
-                  flex: 2,
                   child: _EnergyPanel(
                     isCompact: true,
                     compact: useCompactCards,
@@ -147,11 +191,9 @@ class DashboardPage extends ConsumerWidget {
 
     return Column(
       children: [
+        _CommunicationPanel(items: communicationItems, compact: useCompactCards),
+        const SizedBox(height: 24),
         _AlarmPanel(stats: stats.alarmStats, compact: useCompactCards),
-        const SizedBox(height: 24),
-        _OccupancyPanel(stats: stats, compact: useCompactCards),
-        const SizedBox(height: 24),
-        _ServicePanel(stats: stats, compact: useCompactCards),
         const SizedBox(height: 24),
         _HvacPanel(
           stats: stats.hvacStats,
@@ -159,6 +201,10 @@ class DashboardPage extends ConsumerWidget {
           outsideTemp: state.outsideTemp,
           compact: useCompactCards,
         ),
+        const SizedBox(height: 24),
+        _OccupancyPanel(stats: stats, compact: useCompactCards),
+        const SizedBox(height: 24),
+        _ServicePanel(stats: stats, compact: useCompactCards),
         const SizedBox(height: 24),
         _EnergyPanel(isCompact: false, compact: useCompactCards),
       ],
@@ -244,7 +290,7 @@ class _AlarmPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return _GlassCard(
       title: 'Alarm Status',
-      subtitle: 'Active classifications',
+      subtitle: 'Last 24h snapshot',
       compact: compact,
       child: Column(
         children: stats.map((stat) => Padding(
@@ -304,7 +350,7 @@ class _OccupancyPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _GlassCard(
-      title: 'Occupancy Rates',
+      title: 'Occupancy Status',
       compact: compact,
       trailing: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -353,7 +399,7 @@ class _ServicePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _GlassCard(
-      title: 'Service Request',
+      title: 'Service Requests',
       subtitle: 'Live status overview',
       compact: compact,
       child: Column(
@@ -437,46 +483,47 @@ class _HvacPanel extends StatelessWidget {
           const Text('Outside', style: TextStyle(color: Colors.white60, fontSize: 12)),
         ],
       ) : null,
-      child: Column(
-        children: stats.map((stat) => Padding(
-          padding: EdgeInsets.only(bottom: compact ? 14.0 : 20.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(stat.label, style: const TextStyle(color: Colors.white70)),
-                  Text(
-                    '${
-                        stat.rooms
-                      } / $totalRooms',
-                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+      child: GridView.count(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        crossAxisCount: 2,
+        mainAxisSpacing: compact ? 8 : 12,
+        crossAxisSpacing: compact ? 8 : 12,
+        childAspectRatio: compact ? 2.4 : 2.8,
+        children: stats.take(4).map((stat) {
+          return Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.03),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white.withOpacity(0.08)),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '${stat.rooms}',
+                  style: TextStyle(
+                    color: _getHvacColors(stat.label).first,
+                    fontWeight: FontWeight.bold,
+                    fontSize: compact ? 23 : 26,
                   ),
-                ],
-              ),
-              SizedBox(height: compact ? 6 : 8),
-              Stack(
-                children: [
-                  Container(height: 6, decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(3))),
-                  FractionallySizedBox(
-                    widthFactor: stat.percent / 100,
-                    child: Container(
-                      height: 6,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(colors: _getHvacColors(stat.label)),
-                        borderRadius: BorderRadius.circular(3),
-                        boxShadow: [
-                          BoxShadow(color: _getHvacColors(stat.label)[0].withOpacity(0.5), blurRadius: 4, spreadRadius: 0),
-                        ]
-                      ),
-                    ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  stat.label,
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: compact ? 10 : 11,
                   ),
-                ],
-              ),
-            ],
-          ),
-        )).toList(),
+                ),
+                Text(
+                  '/$totalRooms',
+                  style: const TextStyle(color: Colors.white38, fontSize: 10),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
       ),
     );
   }
@@ -503,7 +550,7 @@ class _EnergyPanel extends StatelessWidget {
 
     return _GlassCard(
       title: 'Energy Consumption',
-      subtitle: 'Usage overview',
+      subtitle: 'Energy saving trend',
       compact: compact,
       child: Column(
         children: [
@@ -533,6 +580,86 @@ class _EnergyPanel extends StatelessWidget {
             child: const EnergySavingsChart(),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CommunicationItem {
+  final String label;
+  final String value;
+  final bool online;
+
+  const _CommunicationItem({
+    required this.label,
+    required this.value,
+    required this.online,
+  });
+}
+
+class _CommunicationPanel extends StatelessWidget {
+  final List<_CommunicationItem> items;
+  final bool compact;
+
+  const _CommunicationPanel({required this.items, this.compact = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return _GlassCard(
+      title: 'Communication Status',
+      subtitle: 'Controller and integration links',
+      compact: compact,
+      child: GridView.count(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        crossAxisCount: 2,
+        mainAxisSpacing: compact ? 8 : 10,
+        crossAxisSpacing: compact ? 8 : 10,
+        childAspectRatio: compact ? 2.3 : 2.6,
+        children: items.map((item) {
+          final color = item.online ? Colors.greenAccent : Colors.redAccent;
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.03),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white.withOpacity(0.08)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.circle, size: 10, color: color),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        item.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white60,
+                          fontSize: compact ? 11 : 13,
+                        ),
+                      ),
+                      Text(
+                        item.value,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: compact ? 14 : 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
       ),
     );
   }

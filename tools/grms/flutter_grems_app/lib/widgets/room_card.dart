@@ -9,7 +9,7 @@ class RoomCard extends StatelessWidget {
   static const double _serviceIconSize = 20;
   static const double _serviceStripHeight = 24;
   static const double _iconVerticalOffset = 5;
-  static const double _roomNumberVerticalOffset = 2;
+  static const double _roomNumberVerticalOffset = 1;
 
   final RoomData room;
   final bool showLighting;
@@ -157,26 +157,10 @@ class RoomCard extends StatelessWidget {
     );
   }
 
-  bool _isLightBackgroundCard(RoomData roomData) {
-    return roomData.status == RoomStatus.unrentedHK ||
-        roomData.status == RoomStatus.unrentedVacant;
-  }
-
   TextStyle _buildRoomNumberTextStyle() {
-    if (_isLightBackgroundCard(room)) {
-      return const TextStyle(
-        color: Color(0xFF141822),
-        fontSize: 15,
-        fontWeight: FontWeight.bold,
-        shadows: [
-          Shadow(color: Colors.white70, blurRadius: 6),
-          Shadow(color: Colors.black45, blurRadius: 1.5, offset: Offset(0, 1)),
-        ],
-      );
-    }
     return const TextStyle(
       color: Colors.white,
-      fontSize: 15,
+      fontSize: 12,
       fontWeight: FontWeight.bold,
       shadows: [Shadow(color: Colors.black, blurRadius: 3)],
     );

@@ -75,25 +75,14 @@ class _AppShellState extends ConsumerState<AppShell> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
-              mainAxisAlignment: _isCollapsed ? MainAxisAlignment.center : MainAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Image.asset(
                   'assets/images/vanpeelogo.png',
-                  width: _isCollapsed ? 34 : 40,
-                  height: _isCollapsed ? 34 : 40,
+                  width: _isCollapsed ? 44 : 68,
+                  height: _isCollapsed ? 44 : 68,
                   fit: BoxFit.contain,
                 ),
-                if (!_isCollapsed) ...[
-                  const SizedBox(width: 12),
-                  const Text(
-                    'GRMS',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                ],
               ],
             ),
           ),

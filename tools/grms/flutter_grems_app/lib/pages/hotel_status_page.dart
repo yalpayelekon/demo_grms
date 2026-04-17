@@ -176,11 +176,11 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(20.0),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  const crossAxisSpacing = 8.0;
-                  const mainAxisSpacing = 10.0;
+                  const crossAxisSpacing = 12.0;
+                  const mainAxisSpacing = 28.0;
                   final width = constraints.maxWidth;
                   final crossAxisCount = width >= 1500
                       ? 13
@@ -208,7 +208,8 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
                         showLighting: _showLighting,
                         showHVAC: _showHVAC,
                         showRoomService: _showRoomService,
-                        onCardTap: () => _showLightingDialog(visibleRooms[index]),
+                        onCardTap: () =>
+                            _showLightingDialog(visibleRooms[index]),
                         onLightingTap: () =>
                             _showLightingDialog(visibleRooms[index]),
                         onHVACTap: () => _showHVACDialog(visibleRooms[index]),

@@ -131,6 +131,8 @@ class DashboardNotifier extends Notifier<DashboardState> {
         cooling++;
       } else if (room.hvac == HvacStatus.hot) {
         heating++;
+      } else if (room.hvac == HvacStatus.active) {
+        idle++;
       } else {
         hvacOff++;
       }
@@ -249,10 +251,22 @@ class DashboardNotifier extends Notifier<DashboardState> {
 
   RoomData _generateMockState(String number) {
     final hash = number.hashCode;
+    final roll = hash.abs() % 100;
+    final status = roll < 45
+        ? RoomStatus.rentedOccupied
+        : roll < 70
+        ? RoomStatus.rentedVacant
+        : roll < 80
+        ? RoomStatus.unrentedVacant
+        : roll < 88
+        ? RoomStatus.rentedHK
+        : roll < 96
+        ? RoomStatus.unrentedHK
+        : RoomStatus.malfunction;
 
     return RoomData(
       number: number,
-      status: RoomStatus.values[hash % RoomStatus.values.length],
+      status: status,
       hasAlarm: hash % 13 == 0,
       lightingOn: hash % 3 == 0,
       hvac: HvacStatus.values[hash % HvacStatus.values.length],
