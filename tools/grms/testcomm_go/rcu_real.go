@@ -89,6 +89,8 @@ var (
 	queueRetryOnce      sync.Once
 	queueRetryEnabled   bool
 	queueRetryMax       int
+	pollingLogsOnce     sync.Once
+	pollingLogsEnabled  bool
 )
 
 type queuedCommandKind string
@@ -563,7 +565,7 @@ func (r *realRcuClient) UpdateHvac(updates map[string]interface{}) map[string]in
 
 	for _, w := range regWrites {
 		msg := buildModbusWriteRegisterMessage(w[0], w[1])
-		// log.Printf("rcu.modbus.write room=%s reg=0x%X value=%d frame_hex=% X", r.room, w[0], w[1], msg)
+		log.Printf("cmd.sent room=%s kind=hvac reg=0x%X value=%d", r.room, w[0], w[1])
 		ev, err := r.sendModbusWriteAndAwaitAckLocked(msg, modbusDeviceShortAddr)
 		if err != nil {
 			log.Printf("rcu.hvac write failed room=%s reg=0x%X value=%d error=%v", r.room, w[0], w[1], err)
@@ -630,6 +632,7 @@ func (r *realRcuClient) doUpdateLightingLevel(address, level int) (map[string]in
 				r.closeConnLocked()
 				return nil, err
 			}
+			log.Printf("cmd.sent room=%s kind=lighting_level address=%d level=%d", r.room, address, level)
 
 			r.mu.RLock()
 			defer r.mu.RUnlock()
@@ -865,14 +868,16 @@ func (r *realRcuClient) opWorkerLoop() {
 }
 
 func (r *realRcuClient) executeOperation(req opRequest) {
-	log.Printf(
-		"rcu.op.exec room=%s kind=%s priority=%s timeoutMs=%d metadata=%s",
-		r.room,
-		req.kind,
-		req.priority,
-		req.timeout.Milliseconds(),
-		strings.TrimSpace(req.metadata),
-	)
+	if !isPollingOp(req.kind) || verbosePollingLogsEnabled() {
+		log.Printf(
+			"rcu.op.exec room=%s kind=%s priority=%s timeoutMs=%d metadata=%s",
+			r.room,
+			req.kind,
+			req.priority,
+			req.timeout.Milliseconds(),
+			strings.TrimSpace(req.metadata),
+		)
+	}
 
 	lockWaitStartedAt := time.Now()
 	r.connMu.Lock()
@@ -1055,14 +1060,14 @@ func (r *realRcuClient) refresh() error {
 func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
 	if r.hasPendingWrite() {
 		r.refreshSkipCounter.Add(1)
-		log.Printf("rcu.refresh.skip room=%s reason=pending_write", r.room)
-		log.Printf("rcu.refresh.outcome room=%s outcome=skipped", r.room)
+		logPollingf("rcu.refresh.skip room=%s reason=pending_write", r.room)
+		logPollingf("rcu.refresh.outcome room=%s outcome=skipped", r.room)
 		return "skipped", nil
 	}
 	if active, remainingMs := r.sceneWindowRemainingMs(); active {
 		r.refreshSkipCounter.Add(1)
-		log.Printf("rcu.refresh.skip room=%s reason=scene_window remainingMs=%d", r.room, remainingMs)
-		log.Printf("rcu.refresh.outcome room=%s outcome=skipped_scene_window", r.room)
+		logPollingf("rcu.refresh.skip room=%s reason=scene_window remainingMs=%d", r.room, remainingMs)
+		logPollingf("rcu.refresh.outcome room=%s outcome=skipped_scene_window", r.room)
 		return "skipped_scene_window", nil
 	}
 
@@ -1074,8 +1079,8 @@ func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
 		if remainingMs < 0 {
 			remainingMs = 0
 		}
-		log.Printf("rcu.refresh.skip room=%s reason=min_interval remainingMs=%d", r.room, remainingMs)
-		log.Printf("rcu.refresh.outcome room=%s outcome=skipped", r.room)
+		logPollingf("rcu.refresh.skip room=%s reason=min_interval remainingMs=%d", r.room, remainingMs)
+		logPollingf("rcu.refresh.outcome room=%s outcome=skipped", r.room)
 		return "skipped", nil
 	}
 
@@ -1127,7 +1132,7 @@ func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
 			}
 			if active, _ := r.sceneWindowRemainingMs(); active {
 				r.refreshSkipCounter.Add(1)
-				log.Printf("rcu.refresh.preempt room=%s phase=scene_window", r.room)
+				logPollingf("rcu.refresh.preempt room=%s phase=scene_window", r.room)
 				partial = true
 				break
 			}
@@ -1144,12 +1149,12 @@ func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
 				}(addr),
 			})
 			if res.err != nil {
-				log.Printf("rcu.output refresh warn room=%s address=%d error=%v", r.room, addr, res.err)
+				logPollingf("rcu.output refresh warn room=%s address=%d error=%v", r.room, addr, res.err)
 			}
 			processed++
 			if r.hasPendingWrite() {
 				r.refreshSkipCounter.Add(1)
-				log.Printf("rcu.refresh.preempt room=%s phase=dynamic_outputs", r.room)
+				logPollingf("rcu.refresh.preempt room=%s phase=dynamic_outputs", r.room)
 				partial = true
 				break
 			}
@@ -1173,7 +1178,7 @@ func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
 		outcome = "partial"
 	}
 	if total > 0 {
-		log.Printf(
+		logPollingf(
 			"rcu.refresh.budget room=%s processed=%d remaining=%d outcome=%s",
 			r.room,
 			processed,
@@ -1181,7 +1186,7 @@ func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
 			outcome,
 		)
 	}
-	log.Printf("rcu.refresh.outcome room=%s outcome=%s", r.room, outcome)
+	logPollingf("rcu.refresh.outcome room=%s outcome=%s", r.room, outcome)
 	return outcome, nil
 }
 
@@ -1207,7 +1212,7 @@ func (r *realRcuClient) refreshUnlockedLockedConn() error {
 
 	if r.hasPendingWrite() {
 		r.refreshSkipCounter.Add(1)
-		log.Printf("rcu.refresh.skip room=%s reason=pending_write", r.room)
+		logPollingf("rcu.refresh.skip room=%s reason=pending_write", r.room)
 		return nil
 	}
 
@@ -1261,7 +1266,7 @@ func (r *realRcuClient) refreshCoreStateLockedConnWithTimeout(timeout time.Durat
 	murState := r.murState
 	laundryOn := r.isLaundryOn
 	r.mu.Unlock()
-	log.Printf(
+	logPollingf(
 		"rcu.refresh.core_state room=%s occupied=%t doorOpen=%t hasDoorAlarm=%t dnd=%t mur=%d laundry=%t",
 		r.room,
 		occupied,
@@ -1328,7 +1333,7 @@ func (r *realRcuClient) refreshDynamicStateLockedConn() error {
 	)
 	if r.hasPendingWrite() {
 		r.refreshSkipCounter.Add(1)
-		log.Printf("rcu.refresh.preempt room=%s phase=dynamic_outputs", r.room)
+		logPollingf("rcu.refresh.preempt room=%s phase=dynamic_outputs", r.room)
 		return nil
 	}
 
@@ -1341,16 +1346,16 @@ func (r *realRcuClient) refreshDynamicStateLockedConn() error {
 	for _, addr := range addresses {
 		if active, _ := r.sceneWindowRemainingMs(); active {
 			r.refreshSkipCounter.Add(1)
-			log.Printf("rcu.refresh.preempt room=%s phase=scene_window", r.room)
+			logPollingf("rcu.refresh.preempt room=%s phase=scene_window", r.room)
 			break
 		}
 		if r.hasPendingWrite() {
 			r.refreshSkipCounter.Add(1)
-			log.Printf("rcu.refresh.preempt room=%s phase=dynamic_outputs", r.room)
+			logPollingf("rcu.refresh.preempt room=%s phase=dynamic_outputs", r.room)
 			break
 		}
 		if err := r.refreshOutputLockedConn(addr); err != nil {
-			log.Printf("rcu.output refresh warn room=%s address=%d error=%v", r.room, addr, err)
+			logPollingf("rcu.output refresh warn room=%s address=%d error=%v", r.room, addr, err)
 		}
 	}
 	return nil
@@ -1696,7 +1701,7 @@ func (r *realRcuClient) refreshOutputLockedConnWithTimeout(address int, timeout 
 	if frame, err := r.sendRequestLockedWithTimeout(buildDaliMastheadQuery(address), timeout); err == nil {
 		r.parseDaliDeviceMasthead(dev, frame.Payload)
 	} else {
-		log.Printf("rcu.dali.masthead query failed room=%s address=%d error=%v", r.room, address, err)
+		logPollingf("rcu.dali.masthead query failed room=%s address=%d error=%v", r.room, address, err)
 	}
 	return nil
 }
@@ -1748,7 +1753,7 @@ func (r *realRcuClient) parseDaliNvmPower(dev *outputDeviceState, payload []byte
 
 func (r *realRcuClient) parseDaliDeviceMasthead(dev *outputDeviceState, payload []byte) {
 	if len(payload) < 3 {
-		log.Printf("rcu.dali.masthead payload too short room=%s address=%d payloadLen=%d", r.room, dev.Address, len(payload))
+		logPollingf("rcu.dali.masthead payload too short room=%s address=%d payloadLen=%d", r.room, dev.Address, len(payload))
 		return
 	}
 	now := time.Now().UTC()
@@ -1784,7 +1789,7 @@ func (r *realRcuClient) parseDaliDeviceMasthead(dev *outputDeviceState, payload 
 	}
 	r.mu.Unlock()
 
-	if debugDue {
+	if debugDue && verbosePollingLogsEnabled() {
 		if situationChanged || alarm {
 			log.Printf(
 				"DEBUG rcu.dali.masthead parsed room=%s address=%d situation=%d alarm=%t payload=% X",
@@ -1800,17 +1805,17 @@ func (r *realRcuClient) parseDaliDeviceMasthead(dev *outputDeviceState, payload 
 
 	switch logState {
 	case "enter":
-		log.Printf(
+		logPollingf(
 			"WARN rcu.dali.masthead pendent room=%s address=%d situation=%d status=%s actual=%d target=%d",
 			r.room, address, situation, statusLabel, actualLevel, targetLevel,
 		)
 	case "heartbeat":
-		log.Printf(
+		logPollingf(
 			"INFO rcu.dali.masthead pendent.still_active room=%s address=%d situation=%d status=%s actual=%d target=%d heartbeat=%s",
 			r.room, address, situation, statusLabel, actualLevel, targetLevel, pendentAlarmHeartbeat,
 		)
 	case "clear":
-		log.Printf(
+		logPollingf(
 			"INFO rcu.dali.masthead cleared room=%s address=%d prev_situation=%d new_situation=%d prev_alarm=%t new_alarm=%t",
 			r.room, address, prevSituation, situation, prevAlarm, alarm,
 		)
@@ -2007,6 +2012,29 @@ func (r *realRcuClient) sendCommandNoResponseLockedWithTimeout(msg []byte, timeo
 func sceneDebugEnabled() bool {
 	v := strings.TrimSpace(os.Getenv("TESTCOMM_DEBUG_SCENES"))
 	return v == "1" || strings.EqualFold(v, "true")
+}
+
+func verbosePollingLogsEnabled() bool {
+	pollingLogsOnce.Do(func() {
+		raw := strings.TrimSpace(os.Getenv("TESTCOMM_LOG_POLLING"))
+		pollingLogsEnabled = raw == "1" || strings.EqualFold(raw, "true")
+	})
+	return pollingLogsEnabled
+}
+
+func logPollingf(format string, args ...interface{}) {
+	if verbosePollingLogsEnabled() {
+		log.Printf(format, args...)
+	}
+}
+
+func isPollingOp(kind opKind) bool {
+	switch kind {
+	case opKindRefreshCore, opKindRefreshOutput, opKindRefreshMisc:
+		return true
+	default:
+		return false
+	}
 }
 
 func debugTimingThreshold() time.Duration {

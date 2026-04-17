@@ -38,7 +38,7 @@ class LightingDialog extends ConsumerStatefulWidget {
 
 class _LightingDialogState extends ConsumerState<LightingDialog> {
   static const double _layoutCanvasWidth = 1536;
-  static const double _layoutCanvasHeight = 768;
+  static const double _layoutCanvasHeight = 1060;
   static const double _pinScale = 1.56;
   static const double _pinSizeInactive = 28.0 * _pinScale;
   static const double _pinSizeActive = _pinSizeInactive * 1.5;
@@ -504,6 +504,9 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
                             child: Image.asset(
                               'assets/images/room_layout.png',
                               fit: BoxFit.fill,
+                              filterQuality: FilterQuality.high,
+                              cacheWidth: 3072,
+                              cacheHeight: 2120,
                             ),
                           ),
                           ...mergedDevices

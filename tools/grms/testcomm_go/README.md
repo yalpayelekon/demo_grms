@@ -12,6 +12,7 @@ Environment variables:
 - `TESTCOMM_PORT` (default: `8082`)
 - `TESTCOMM_KILL_PREVIOUS` - when port is in use, the server attempts to terminate the process using the port and then retries (Windows only). Set to `0` or `false` to disable.
 - `TESTCOMM_LOG_FILE` (optional): log file path. The file is recreated with truncate mode on every startup.
+- `TESTCOMM_LOG_POLLING` (optional, default `0`/`false`): when disabled, suppresses periodic polling/refresh logs so logs focus on incoming events and outbound commands. Set to `1`/`true` to restore verbose polling logs.
 - `TESTCOMM_DISABLE_REFRESH` (optional, `1`/`true`): disables refresh paths temporarily so only command sends (for example scene trigger) are active.
 - `TESTCOMM_SCENE_REQUIRE_RESPONSE` (optional, default `0`/`false`): when enabled, scene calls wait for device response (`status=confirmed`). Default fast mode sends write-only and returns `status=accepted`.
 
