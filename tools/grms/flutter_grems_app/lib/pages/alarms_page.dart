@@ -65,6 +65,7 @@ class _AlarmsPageState extends ConsumerState<AlarmsPage> {
 
   Widget _buildHeader(AlarmsState state) {
     final notifier = ref.read(alarmsProvider.notifier);
+    final titleStyle = Theme.of(context).textTheme.titleLarge;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -76,7 +77,7 @@ class _AlarmsPageState extends ConsumerState<AlarmsPage> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-          const Text('Alarms', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+          Text('Alarms', style: titleStyle),
           const SizedBox(width: 32),
           _buildFilterGroup('Category', state.categoryFilter, (v) => notifier.setFilters(category: v), ['All', 'Long Inact.', 'Open Door', 'PMS', 'RCU', 'Lighting', 'HVAC', 'HK']),
           const SizedBox(width: 16),

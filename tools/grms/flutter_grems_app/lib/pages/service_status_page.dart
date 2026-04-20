@@ -78,20 +78,23 @@ class _ServiceStatusPageState extends ConsumerState<ServiceStatusPage> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isNarrow = constraints.maxWidth < 1100;
+        final titleStyle = Theme.of(context).textTheme.titleLarge;
+        final subtitleStyle = Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(
+          color: Colors.white.withOpacity(0.6),
+        );
         if (isNarrow) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Room Services',
-                style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+                style: titleStyle,
               ),
               Text(
                 'Track DND, make-up-room, and laundry responses',
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.6),
-                  fontSize: 16,
-                ),
+                style: subtitleStyle,
               ),
               const SizedBox(height: 16),
               _buildFilters(),
@@ -106,16 +109,13 @@ class _ServiceStatusPageState extends ConsumerState<ServiceStatusPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Room Services',
-                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+                    style: titleStyle,
                   ),
                   Text(
                     'Track DND, make-up-room, and laundry responses',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.6),
-                      fontSize: 16,
-                    ),
+                    style: subtitleStyle,
                   ),
                 ],
               ),

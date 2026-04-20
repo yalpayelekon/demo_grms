@@ -21,8 +21,12 @@ class DashboardPage extends ConsumerWidget {
     final isWideDesktop = size.width > 1200;
     final canUseFixedDesktopGrid = isWideDesktop && size.height > 860;
     final isTablet = size.width >= 850 && size.width < 1200;
+    final canUseFixedTabletGrid =
+        isTablet && size.width >= 1100 && size.height >= 800;
     final useCompactCards = size.height <= 920 || size.width <= 1360;
     final useUltraCompactCards = isTablet || size.width < 850;
+    final useTightTabletSpacing = canUseFixedTabletGrid;
+    final canUseFixedGrid = canUseFixedDesktopGrid || canUseFixedTabletGrid;
 
     return Scaffold(
       appBar: AppBar(
@@ -43,8 +47,8 @@ class DashboardPage extends ConsumerWidget {
           child: LayoutBuilder(
             builder: (context, constraints) {
               return Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: canUseFixedDesktopGrid
+                padding: EdgeInsets.all(useTightTabletSpacing ? 18.0 : 24.0),
+                child: canUseFixedGrid
                     // Desktop/tablet: fit cards into viewport without scrolling
                     ? Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -57,9 +61,11 @@ class DashboardPage extends ConsumerWidget {
                               hotelSync: hotelSync,
                               serviceSync: serviceSync,
                               coordinatesSync: coordinatesSync,
-                              isDesktop: true,
+                              isDesktop: canUseFixedDesktopGrid,
+                              pinToViewport: true,
                               useCompactCards: useCompactCards,
                               useUltraCompactCards: useUltraCompactCards,
+                              useTightTabletSpacing: useTightTabletSpacing,
                             ),
                           ),
                         ],
@@ -81,8 +87,10 @@ class DashboardPage extends ConsumerWidget {
                                 serviceSync: serviceSync,
                                 coordinatesSync: coordinatesSync,
                                 isDesktop: false,
+                                pinToViewport: false,
                                 useCompactCards: true,
                                 useUltraCompactCards: useUltraCompactCards,
+                                useTightTabletSpacing: useTightTabletSpacing,
                               ),
                             ],
                           ),
@@ -104,8 +112,10 @@ class DashboardPage extends ConsumerWidget {
     required DemoRoomServiceSyncStatus serviceSync,
     required CoordinatesSyncState coordinatesSync,
     required bool isDesktop,
+    required bool pinToViewport,
     required bool useCompactCards,
     required bool useUltraCompactCards,
+    required bool useTightTabletSpacing,
   }) {
     final communicationItems = <_CommunicationItem>[
       _CommunicationItem(
@@ -130,7 +140,7 @@ class DashboardPage extends ConsumerWidget {
       ),
     ];
 
-    if (isDesktop) {
+    if (isDesktop || pinToViewport) {
       return Column(
         children: [
           Expanded(
@@ -144,7 +154,7 @@ class DashboardPage extends ConsumerWidget {
                     ultraCompact: useUltraCompactCards,
                   ),
                 ),
-                const SizedBox(width: 16),
+                SizedBox(width: useTightTabletSpacing ? 12 : 16),
                 Expanded(
                   child: _AlarmPanel(
                     stats: stats.alarmStats,
@@ -152,7 +162,7 @@ class DashboardPage extends ConsumerWidget {
                     ultraCompact: useUltraCompactCards,
                   ),
                 ),
-                const SizedBox(width: 16),
+                SizedBox(width: useTightTabletSpacing ? 12 : 16),
                 Expanded(
                   child: _HvacPanel(
                     stats: stats.hvacStats,
@@ -165,7 +175,7 @@ class DashboardPage extends ConsumerWidget {
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: useTightTabletSpacing ? 12 : 16),
           Expanded(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -177,7 +187,7 @@ class DashboardPage extends ConsumerWidget {
                     ultraCompact: useUltraCompactCards,
                   ),
                 ),
-                const SizedBox(width: 16),
+                SizedBox(width: useTightTabletSpacing ? 12 : 16),
                 Expanded(
                   child: _ServicePanel(
                     stats: stats,
@@ -185,7 +195,7 @@ class DashboardPage extends ConsumerWidget {
                     ultraCompact: useUltraCompactCards,
                   ),
                 ),
-                const SizedBox(width: 16),
+                SizedBox(width: useTightTabletSpacing ? 12 : 16),
                 Expanded(
                   child: _EnergyPanel(
                     isCompact: true,
@@ -238,14 +248,16 @@ class DashboardPage extends ConsumerWidget {
       builder: (context, constraints) {
         final crossAxisCount = constraints.maxWidth >= 850 ? 2 : 1;
         return GridView.builder(
-          shrinkWrap: true,
+          shrinkWrap: !pinToViewport,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: cards.length,
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,
-            mainAxisSpacing: 16,
-            crossAxisSpacing: 16,
-            childAspectRatio: useUltraCompactCards ? 1.18 : 1.28,
+            mainAxisSpacing: useTightTabletSpacing ? 12 : 16,
+            crossAxisSpacing: useTightTabletSpacing ? 12 : 16,
+            childAspectRatio: pinToViewport
+                ? (useUltraCompactCards ? 1.34 : 1.42)
+                : (useUltraCompactCards ? 1.18 : 1.28),
           ),
           itemBuilder: (context, index) => cards[index],
         );
@@ -273,8 +285,8 @@ class _GlassCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cardPadding = ultraCompact ? 12.0 : (compact ? 16.0 : 24.0);
-    final headerGap = ultraCompact ? 10.0 : (compact ? 14.0 : 24.0);
+    final cardPadding = ultraCompact ? 10.0 : (compact ? 14.0 : 24.0);
+    final headerGap = ultraCompact ? 8.0 : (compact ? 12.0 : 24.0);
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.05),
@@ -296,7 +308,7 @@ class _GlassCard extends StatelessWidget {
                     Text(
                       title,
                       style: TextStyle(
-                        fontSize: ultraCompact ? 16 : (compact ? 18 : 20),
+                        fontSize: ultraCompact ? 15 : (compact ? 17 : 20),
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                       ),
@@ -307,7 +319,7 @@ class _GlassCard extends StatelessWidget {
                         subtitle!,
                         style: TextStyle(
                           color: Colors.white60,
-                          fontSize: ultraCompact ? 10 : (compact ? 12 : 13),
+                          fontSize: ultraCompact ? 9 : (compact ? 11 : 13),
                         ),
                       ),
                     ],

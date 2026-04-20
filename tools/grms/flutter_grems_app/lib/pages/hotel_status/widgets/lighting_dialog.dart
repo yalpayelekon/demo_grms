@@ -352,6 +352,10 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
   }
 
   Future<void> _triggerScene(int scene) async {
+    if (scene == 6) {
+      await _turnAllLightsOff();
+      return;
+    }
     final tappedAt = DateTime.now();
     final clientTappedAtMs = tappedAt.millisecondsSinceEpoch;
     final clientRequestId = 'scene-$clientTappedAtMs-$scene';
@@ -397,6 +401,53 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     }
   }
 
+  Future<void> _turnAllLightsOff() async {
+    final lightingDevices = _buildMergedDevices()
+        .where((device) => !_isBlindDevice(device))
+        .toList();
+
+    if (lightingDevices.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No lighting devices found for this room.'),
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      _lastTriggeredScene = 6;
+      _errorMessage = null;
+    });
+
+    final api = ref.read(roomControlApiProvider);
+    String? firstError;
+    for (final device in lightingDevices) {
+      final result = await api.setLightingLevel(
+        widget.room.number,
+        device.address,
+        0,
+        type: device.type,
+      );
+      if (result is Failure<void>) {
+        firstError ??= result.error.message;
+      }
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    if (firstError != null) {
+      setState(() => _errorMessage = 'Off command failed: $firstError');
+      return;
+    }
+
+    await ref.read(roomSnapshotProvider(widget.room.number).notifier).refreshNow();
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.watch(lightingDevicesProvider);
@@ -409,7 +460,14 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
       MediaQuery.of(context).size.width * 0.96,
       1880.0,
     );
-    final isCompactTablet = dialogWidth < 1150;
+    const wideMainFlex = 7.0;
+    const wideSideFlex = 3.0;
+    const wideLayoutHorizontalChrome = 84.0;
+    final estimatedWideSidePanelWidth =
+        ((dialogWidth - wideLayoutHorizontalChrome) * wideSideFlex) /
+        (wideMainFlex + wideSideFlex);
+    final isCompactTablet =
+        dialogWidth < 1150 || estimatedWideSidePanelWidth < 420;
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -553,7 +611,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
                               children: [
                                 Positioned.fill(
                                   child: Image.asset(
-                                    'assets/images/room_layout.png',
+                                    'assets/images/room_layout_web.png',
                                     fit: BoxFit.fill,
                                     filterQuality: FilterQuality.high,
                                     cacheWidth: 3072,
