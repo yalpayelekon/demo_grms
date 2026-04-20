@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'providers/auth_provider.dart';
+import 'utils/fullscreen_helper.dart';
 
 class AppShell extends ConsumerStatefulWidget {
   final Widget child;
@@ -14,6 +15,13 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   bool _isCollapsed = false;
+  bool _isFullscreen = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _isFullscreen = FullscreenHelper.isFullscreen();
+  }
 
   int _getSelectedIndex(String location) {
     if (location.startsWith('/home') ||
@@ -202,6 +210,22 @@ class _AppShellState extends ConsumerState<AppShell> {
                 ),
               ],
             ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            tooltip: _isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen',
+            icon: Icon(
+              _isFullscreen
+                  ? Icons.fullscreen_exit_outlined
+                  : Icons.fullscreen_outlined,
+            ),
+            onPressed: () async {
+              await FullscreenHelper.toggle();
+              if (!mounted) return;
+              setState(() {
+                _isFullscreen = FullscreenHelper.isFullscreen();
+              });
+            },
           ),
         ],
       ),
