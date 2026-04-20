@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../models/service_models.dart';
 import '../providers/room_service_provider.dart';
 import '../providers/zones_provider.dart';
-import '../models/service_models.dart';
 
 class ServiceStatusPage extends ConsumerStatefulWidget {
   const ServiceStatusPage({super.key});
@@ -46,7 +47,7 @@ class _ServiceStatusPageState extends ConsumerState<ServiceStatusPage> {
 
     return Scaffold(
       body: Padding(
-        padding: const EdgeInsets.all(24.0),
+        padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -263,7 +264,9 @@ class _ServiceStatusPageState extends ConsumerState<ServiceStatusPage> {
                         horizontal: 16,
                         vertical: 12,
                       ),
-                      child: _buildTimeCell(entry.acknowledgementTime ?? '—'),
+                      child: _buildTimeCell(
+                        entry.acknowledgementTime ?? '—',
+                      ),
                     ),
                   ),
                 ],
@@ -336,15 +339,24 @@ class _ServiceStatusPageState extends ConsumerState<ServiceStatusPage> {
   }
 
   Widget _buildServicePill(RoomServiceEntry entry) {
-    String emoji = '🛎️';
-    if (entry.serviceType == ServiceType.dnd) emoji = '🚫';
-    if (entry.serviceType == ServiceType.mur) emoji = '🧹';
-    if (entry.serviceType == ServiceType.laundry) emoji = '🧺';
+    var icon = Icons.room_service_outlined;
+    var iconColor = Colors.white.withOpacity(0.75);
+
+    if (entry.serviceType == ServiceType.dnd) {
+      icon = Icons.do_not_disturb_on_outlined;
+      iconColor = Colors.redAccent;
+    } else if (entry.serviceType == ServiceType.mur) {
+      icon = Icons.cleaning_services_outlined;
+      iconColor = Colors.orangeAccent;
+    } else if (entry.serviceType == ServiceType.laundry) {
+      icon = Icons.local_laundry_service_outlined;
+      iconColor = Colors.orange.shade200;
+    }
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(emoji, style: const TextStyle(fontSize: 16)),
+        Icon(icon, color: iconColor, size: 20),
         const SizedBox(width: 8),
         Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -374,7 +386,7 @@ class _ServiceStatusPageState extends ConsumerState<ServiceStatusPage> {
   Widget _buildStatusBadge(RoomServiceEntry entry) {
     Color bgColor = Colors.grey.withOpacity(0.1);
     Color textColor = Colors.grey;
-    String text = entry.serviceState;
+    var text = entry.serviceState;
 
     if (entry.serviceState == 'Requested') {
       bgColor = Colors.red.withOpacity(0.1);
@@ -438,9 +450,8 @@ class _ServiceStatusPageState extends ConsumerState<ServiceStatusPage> {
     }
 
     return InkWell(
-      onTap: () => ref
-          .read(roomServiceProvider.notifier)
-          .toggleAcknowledgement(entry.id),
+      onTap: () =>
+          ref.read(roomServiceProvider.notifier).toggleAcknowledgement(entry.id),
       borderRadius: BorderRadius.circular(4),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -461,11 +472,9 @@ class _ServiceStatusPageState extends ConsumerState<ServiceStatusPage> {
   }
 
   String? _getZoneName(String roomNumber, ZonesState zones) {
-    // Search in categoryNamesBlockFloorMap
-    for (var zoneEntry in zones.zonesData.categoryNamesBlockFloorMap.entries) {
-      for (var floorEntry in zoneEntry.value.entries) {
+    for (final zoneEntry in zones.zonesData.categoryNamesBlockFloorMap.entries) {
+      for (final floorEntry in zoneEntry.value.entries) {
         if (floorEntry.value.contains(roomNumber)) {
-          // Now find the display name in homePageBlockButtons
           final zoneBtn = zones.zonesData.homePageBlockButtons.firstWhere(
             (b) => b.buttonName == zoneEntry.key,
             orElse: () => zones.zonesData.homePageBlockButtons.firstWhere(

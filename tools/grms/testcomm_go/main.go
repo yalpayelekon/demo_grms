@@ -134,6 +134,7 @@ type RcuClient interface {
 	UpdateHvac(updates map[string]interface{}) map[string]interface{}
 	UpdateLightingLevel(address, level int, requestID string) map[string]interface{}
 	CallLightingScene(scene int, requestID string) map[string]interface{}
+	ExecuteRawCommand(frame []byte, requestID string) map[string]interface{}
 	Shutdown()
 }
 
@@ -422,6 +423,11 @@ func (s *TestCommServer) handleRooms(w http.ResponseWriter, r *http.Request) {
 
 	if len(extra) > 0 && strings.EqualFold(extra[0], "hvac") {
 		s.handleHvac(w, r, room)
+		return
+	}
+
+	if len(extra) > 0 && strings.EqualFold(extra[0], "raw-command") {
+		s.handleRawCommand(w, r, room)
 		return
 	}
 
@@ -776,6 +782,45 @@ func (s *TestCommServer) handleHvac(w http.ResponseWriter, r *http.Request, room
 	}
 
 	sendText(w, http.StatusMethodNotAllowed, "Method Not Allowed")
+}
+
+func (s *TestCommServer) handleRawCommand(w http.ResponseWriter, r *http.Request, room string) {
+	rcu := s.getOrCreateRcu(room)
+	if rcu == nil {
+		sendText(w, http.StatusNotFound, "Unknown room")
+		return
+	}
+	if r.Method != http.MethodPost {
+		sendText(w, http.StatusMethodNotAllowed, "Method Not Allowed")
+		return
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sendText(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+
+	hexFrame := strings.TrimSpace(stringFromAny(body["hex"]))
+	if hexFrame == "" {
+		sendText(w, http.StatusBadRequest, "Request must include hex command")
+		return
+	}
+
+	frame, err := decodeHexCommand(hexFrame)
+	if err != nil {
+		sendText(w, http.StatusBadRequest, fmt.Sprintf("Invalid hex command: %v", err))
+		return
+	}
+
+	requestID := strings.TrimSpace(stringFromAny(body["clientRequestId"]))
+	payload := rcu.ExecuteRawCommand(frame, requestID)
+	if payload == nil {
+		sendText(w, http.StatusBadGateway, "Failed to send raw command")
+		return
+	}
+	writeJSON(w, payload)
+	s.broadcastRoomSnapshot(room)
 }
 
 // handleMenu implements /testcomm/rooms/{room}/menu with a simplified behavior
@@ -1392,6 +1437,20 @@ func (rs *RoomStore) CallLightingScene(room string, scene int) map[string]interf
 		"group":     sceneGroupByte,
 		"triggered": true,
 		"source":    "simulation",
+	}
+}
+
+func (rs *RoomStore) ExecuteRawCommand(room string, frame []byte) map[string]interface{} {
+	rs.mu.RLock()
+	defer rs.mu.RUnlock()
+	if _, ok := rs.rooms[room]; !ok {
+		return nil
+	}
+	return map[string]interface{}{
+		"triggered": true,
+		"source":    "simulation",
+		"status":    "accepted",
+		"frameHex":  fmt.Sprintf("% X", frame),
 	}
 }
 
@@ -2115,6 +2174,36 @@ func trimSlashes(v string) string {
 		v = v[:len(v)-1]
 	}
 	return v
+}
+
+func decodeHexCommand(raw string) ([]byte, error) {
+	cleaned := strings.Map(func(r rune) rune {
+		switch {
+		case r >= '0' && r <= '9':
+			return r
+		case r >= 'a' && r <= 'f':
+			return r
+		case r >= 'A' && r <= 'F':
+			return r
+		default:
+			return -1
+		}
+	}, raw)
+	if cleaned == "" {
+		return nil, fmt.Errorf("empty hex payload")
+	}
+	if len(cleaned)%2 != 0 {
+		return nil, fmt.Errorf("hex payload must have even length")
+	}
+	out := make([]byte, len(cleaned)/2)
+	for i := 0; i < len(cleaned); i += 2 {
+		v, err := strconv.ParseUint(cleaned[i:i+2], 16, 8)
+		if err != nil {
+			return nil, err
+		}
+		out[i/2] = byte(v)
+	}
+	return out, nil
 }
 
 func urlDecode(s string) (string, error) {

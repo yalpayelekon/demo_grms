@@ -694,6 +694,47 @@ func (r *realRcuClient) CallLightingScene(scene int, requestID string) map[strin
 	return out
 }
 
+func (r *realRcuClient) ExecuteRawCommand(frame []byte, requestID string) map[string]interface{} {
+	if len(frame) == 0 {
+		return nil
+	}
+	opRes := r.enqueueOperation(opRequest{
+		kind:     opKindScene,
+		priority: opPriorityHigh,
+		timeout:  sceneWriteOnlyTimeout,
+		metadata: fmt.Sprintf("raw_hex=% X", frame),
+		exec: func(timeout time.Duration) (map[string]interface{}, error) {
+			if err := r.sendCommandNoResponseLockedWithTimeout(frame, timeout); err != nil {
+				log.Printf("rcu.raw.trigger failed room=%s error=%v frame_hex=% X", r.room, err, frame)
+				r.closeConnLocked()
+				return nil, err
+			}
+			log.Printf("rcu.raw.trigger sent room=%s frame_hex=% X requestId=%s", r.room, frame, requestID)
+			return map[string]interface{}{
+				"triggered": true,
+				"source":    "live",
+				"status":    "accepted",
+				"frameHex":  fmt.Sprintf("% X", frame),
+			}, nil
+		},
+	})
+	if opRes.err != nil {
+		return map[string]interface{}{
+			"triggered": false,
+			"source":    "live",
+			"status":    "failed",
+			"frameHex":  fmt.Sprintf("% X", frame),
+			"error":     fmt.Sprintf("%v", opRes.err),
+		}
+	}
+	if opRes.payload == nil {
+		return nil
+	}
+	out := cloneMap(opRes.payload)
+	out["lockWaitMs"] = opRes.lockWaitMs
+	return out
+}
+
 func (r *realRcuClient) doCallLightingScene(scene int) (map[string]interface{}, error) {
 	startedAt := time.Now()
 	r.markWriteStart()

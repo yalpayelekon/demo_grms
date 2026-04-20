@@ -62,6 +62,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
   bool _savingHvac = false;
   bool _loadingHvac = false;
   bool _updatingBlinds = false;
+  bool _masterPowerEnabled = true;
   final GlobalKey _layoutStackKey = GlobalKey();
   final Map<String, Offset> _dragCanvasPositions = <String, Offset>{};
   String? _draggingKey;
@@ -217,6 +218,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     _initialIsOn = _isOn;
     _initialMode = _mode;
     _initialFanMode = _fanMode;
+    _masterPowerEnabled = room.lightingOn;
   }
 
   int _normalizeMode(int? raw) {
@@ -353,7 +355,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
 
   Future<void> _triggerScene(int scene) async {
     if (scene == 6) {
-      await _turnAllLightsOff();
+      await _toggleMasterPower();
       return;
     }
     final tappedAt = DateTime.now();
@@ -401,51 +403,58 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     }
   }
 
-  Future<void> _turnAllLightsOff() async {
-    final lightingDevices = _buildMergedDevices()
-        .where((device) => !_isBlindDevice(device))
-        .toList();
-
-    if (lightingDevices.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No lighting devices found for this room.'),
-          ),
-        );
-      }
-      return;
-    }
-
-    setState(() {
-      _lastTriggeredScene = 6;
-      _errorMessage = null;
-    });
-
+  Future<bool> _sendRawCommand(
+    String hexCommand, {
+    String? successMessage,
+    String? failurePrefix,
+  }) async {
     final api = ref.read(roomControlApiProvider);
-    String? firstError;
-    for (final device in lightingDevices) {
-      final result = await api.setLightingLevel(
-        widget.room.number,
-        device.address,
-        0,
-        type: device.type,
-      );
-      if (result is Failure<void>) {
-        firstError ??= result.error.message;
-      }
-    }
-
+    final requestId = 'raw-${DateTime.now().millisecondsSinceEpoch}';
+    final result = await api.sendRawCommand(
+      widget.room.number,
+      hexCommand,
+      clientRequestId: requestId,
+    );
     if (!mounted) {
-      return;
+      return false;
     }
-
-    if (firstError != null) {
-      setState(() => _errorMessage = 'Off command failed: $firstError');
-      return;
+    if (result is Failure<Map<String, dynamic>>) {
+      final prefix = failurePrefix ?? 'Command failed';
+      final message = '$prefix: ${result.error.message}';
+      setState(() => _errorMessage = message);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+      return false;
     }
-
+    if (successMessage != null && successMessage.isNotEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(successMessage)));
+    }
     await ref.read(roomSnapshotProvider(widget.room.number).notifier).refreshNow();
+    return true;
+  }
+
+  Future<void> _toggleMasterPower() async {
+    final nextEnabled = !_masterPowerEnabled;
+    final hex = nextEnabled
+        ? '3E 000B 030403 0110040500070001'
+        : '3E 000B 030403 0110040500070000';
+    final ok = await _sendRawCommand(
+      hex,
+      successMessage: nextEnabled
+          ? 'Master power enabled.'
+          : 'Master power disabled.',
+      failurePrefix: 'Master power command failed',
+    );
+    if (!mounted || !ok) {
+      return;
+    }
+    setState(() {
+      _masterPowerEnabled = nextEnabled;
+      _lastTriggeredScene = 6;
+    });
   }
 
   @override
@@ -817,52 +826,47 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
   }
 
   Future<void> _setBlindsLevel({required int targetLevel}) async {
-    final blindDevices = _buildMergedDevices().where(_isBlindDevice).toList();
-    if (blindDevices.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No blinds devices found for this room.'),
-          ),
-        );
-      }
-      return;
-    }
-
     setState(() => _updatingBlinds = true);
-    final api = ref.read(roomControlApiProvider);
-    String? firstError;
-    for (final device in blindDevices) {
-      final result = await api.setLightingLevel(
-        widget.room.number,
-        device.address,
-        targetLevel,
-        type: device.type,
-      );
-      if (result is Failure<void>) {
-        firstError ??= result.error.message;
-      }
+    final hex = targetLevel > 0
+        ? '3E 000B 030403 0010020500000000'
+        : '3E 000B 030403 0010020700000000';
+    await _sendRawCommand(
+      hex,
+      successMessage: targetLevel > 0
+          ? 'Blinds opened successfully.'
+          : 'Blinds closed successfully.',
+      failurePrefix: 'Blinds update failed',
+    );
+    if (mounted) {
+      setState(() => _updatingBlinds = false);
     }
+  }
 
-    if (!mounted) {
+  String _serviceCommandHex(ServiceType serviceType) {
+    return switch (serviceType) {
+      ServiceType.dnd => '3E 000B 030403 0F10090000000000',
+      ServiceType.laundry => '3E 000B 030403 0F100A0000000000',
+      ServiceType.mur => '3E 000B 030403 0F100B0000000000',
+    };
+  }
+
+  Future<void> _applyServiceAction({
+    required String roomNumber,
+    required ServiceType serviceType,
+    required String serviceState,
+  }) async {
+    final ok = await _sendRawCommand(
+      _serviceCommandHex(serviceType),
+      failurePrefix: '${serviceType.label} command failed',
+    );
+    if (!mounted || !ok) {
       return;
     }
-    setState(() => _updatingBlinds = false);
-    if (firstError != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Blinds update failed: $firstError')),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            targetLevel > 0
-                ? 'Blinds opened successfully.'
-                : 'Blinds closed successfully.',
-          ),
-        ),
-      );
-    }
+    ref.read(roomServiceProvider.notifier).applyServiceAction(
+      roomNumber: roomNumber,
+      serviceType: serviceType,
+      serviceState: serviceState,
+    );
   }
 
   Widget _buildHvacCard(RoomData room) {
@@ -1085,17 +1089,16 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     required RoomServiceEntry? entry,
     required String fallbackState,
   }) {
-    final stateText = _displayServiceState(
-      serviceType,
-      entry?.serviceState ?? fallbackState,
-    );
+    final rawState = entry?.serviceState ?? fallbackState;
+    final stateText = _displayServiceState(serviceType, rawState);
+    final isOn = stateText == 'On';
     final timestampText = entry?.activationTime ?? '-';
     final actionLabels = ('On', 'Off');
-    final actionStates = switch (serviceType) {
-      ServiceType.dnd => ('On', 'Off'),
-      ServiceType.mur => ('Requested', 'Finished'),
-      ServiceType.laundry => ('Requested', 'Finished'),
-    };
+    final toggledDisplayState = isOn ? 'Off' : 'On';
+    final toggledServiceState = _serviceStateFromDisplay(
+      serviceType,
+      toggledDisplayState,
+    );
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -1134,14 +1137,16 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
             child: FilledButton.tonal(
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                backgroundColor: isOn
+                    ? const Color(0xFFFFC107).withOpacity(0.24)
+                    : null,
+                foregroundColor: Colors.white,
               ),
-              onPressed: () => ref
-                  .read(roomServiceProvider.notifier)
-                  .applyServiceAction(
-                    roomNumber: roomNumber,
-                    serviceType: serviceType,
-                    serviceState: actionStates.$1,
-                  ),
+              onPressed: () => _applyServiceAction(
+                roomNumber: roomNumber,
+                serviceType: serviceType,
+                serviceState: toggledServiceState,
+              ),
               child: Text(
                 actionLabels.$1,
                 style: const TextStyle(fontSize: 11),
@@ -1154,14 +1159,16 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
             child: FilledButton.tonal(
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                backgroundColor: !isOn
+                    ? const Color(0xFFFFC107).withOpacity(0.24)
+                    : null,
+                foregroundColor: Colors.white,
               ),
-              onPressed: () => ref
-                  .read(roomServiceProvider.notifier)
-                  .applyServiceAction(
-                    roomNumber: roomNumber,
-                    serviceType: serviceType,
-                    serviceState: actionStates.$2,
-                  ),
+              onPressed: () => _applyServiceAction(
+                roomNumber: roomNumber,
+                serviceType: serviceType,
+                serviceState: toggledServiceState,
+              ),
               child: Text(
                 actionLabels.$2,
                 style: const TextStyle(fontSize: 11),
@@ -1183,6 +1190,17 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
       case ServiceType.laundry:
         const onStates = {'requested', 'started', 'yellow', 'on', 'active'};
         return onStates.contains(normalized) ? 'On' : 'Off';
+    }
+  }
+
+  String _serviceStateFromDisplay(ServiceType type, String displayState) {
+    final isOn = displayState.trim().toLowerCase() == 'on';
+    switch (type) {
+      case ServiceType.dnd:
+        return isOn ? 'On' : 'Off';
+      case ServiceType.mur:
+      case ServiceType.laundry:
+        return isOn ? 'Requested' : 'Finished';
     }
   }
 
@@ -1251,7 +1269,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
       3: 'TV',
       4: 'Dining',
       5: 'Night',
-      6: 'Off',
+      6: 'On/Off',
     };
 
     return Container(

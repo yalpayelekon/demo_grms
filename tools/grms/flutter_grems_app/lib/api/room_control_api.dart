@@ -88,6 +88,26 @@ class RoomControlApi {
     );
   }
 
+  Future<ApiResult<Map<String, dynamic>>> sendRawCommand(
+    String roomNumber,
+    String hexCommand, {
+    String? clientRequestId,
+  }) async {
+    final effectiveRoomNumber = _resolveRoomNumber(roomNumber);
+    final payload = <String, dynamic>{'hex': hexCommand};
+    if (clientRequestId != null && clientRequestId.isNotEmpty) {
+      payload['clientRequestId'] = clientRequestId;
+    }
+    return _requestJson(
+      method: 'POST',
+      path:
+          '$_roomsBase/${Uri.encodeComponent(effectiveRoomNumber)}/raw-command',
+      payload: payload,
+      parse: (json) => json,
+      includeRoleHeader: true,
+    );
+  }
+
   Future<ApiResult<RcuMenuResponse>> fetchRcuMenu(
     RcuMenuRequest request,
   ) async {
