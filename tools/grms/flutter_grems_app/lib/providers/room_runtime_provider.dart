@@ -166,6 +166,31 @@ class RoomLightingRuntimeNotifier
     _resyncWithSnapshot();
   }
 
+  void startMasterPowerToggle(
+    bool enabled,
+    String requestId,
+    DateTime startedAt,
+  ) {
+    state = state.copyWith(
+      selectedScene: 6,
+      pendingScene: 6,
+      pendingSceneRequestId: requestId,
+      pendingSceneStartedAt: startedAt,
+      clearPendingSceneAckAt: true,
+      pendingSceneStatus: PendingLightingStatus.inflight,
+    );
+    _applyOptimisticMasterPower(enabled);
+    _scheduleSync();
+  }
+
+  void ackMasterPowerToggle(String requestId) {
+    ackScene(requestId);
+  }
+
+  void failMasterPowerToggle(String requestId) {
+    failScene(requestId);
+  }
+
   void startDeviceWrite(
     LightingDeviceSummary displayedDevice,
     int targetLevel,
@@ -293,6 +318,25 @@ class RoomLightingRuntimeNotifier
         return _copyLevel(item, level);
       }
       return item;
+    }
+
+    state = state.copyWith(
+      lighting: LightingDevicesResponse(
+        onboardOutputs: current.onboardOutputs.map(apply).toList(),
+        daliOutputs: current.daliOutputs.map(apply).toList(),
+      ),
+    );
+  }
+
+  void _applyOptimisticMasterPower(bool enabled) {
+    final current = state.lighting;
+    if (current == null) {
+      return;
+    }
+    final level = enabled ? 100.0 : 0.0;
+
+    LightingDeviceSummary apply(LightingDeviceSummary device) {
+      return _copyLevel(device, level);
     }
 
     state = state.copyWith(

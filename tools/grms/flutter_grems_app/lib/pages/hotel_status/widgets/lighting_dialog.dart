@@ -414,13 +414,15 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     String hexCommand, {
     String? successMessage,
     String? failurePrefix,
+    String? requestId,
   }) async {
     final api = ref.read(roomControlApiProvider);
-    final requestId = 'raw-${DateTime.now().millisecondsSinceEpoch}';
+    final effectiveRequestId =
+        requestId ?? 'raw-${DateTime.now().millisecondsSinceEpoch}';
     final result = await api.sendRawCommand(
       widget.room.number,
       hexCommand,
-      clientRequestId: requestId,
+      clientRequestId: effectiveRequestId,
     );
     if (!mounted) {
       return false;
@@ -431,14 +433,14 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
       setState(() => _errorMessage = message);
       debugPrint(
         'LightingDialog: raw command failed room=${widget.room.number} '
-        'requestId=$requestId hex="$hexCommand" error="$message"',
+        'requestId=$effectiveRequestId hex="$hexCommand" error="$message"',
       );
       return false;
     }
     if (successMessage != null && successMessage.isNotEmpty) {
       debugPrint(
         'LightingDialog: raw command success room=${widget.room.number} '
-        'requestId=$requestId hex="$hexCommand" message="$successMessage"',
+        'requestId=$effectiveRequestId hex="$hexCommand" message="$successMessage"',
       );
     }
     // Avoid immediate post-write polling race; schedule a delayed refresh.
@@ -454,27 +456,45 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
   }
 
   Future<void> _toggleMasterPower() async {
+    final startedAt = DateTime.now();
+    final requestId = 'raw-${startedAt.millisecondsSinceEpoch}';
     final nextEnabled = !_masterPowerEnabled;
     // Device semantics are inverted for this command family:
     // 0x0000 => enable master lighting, 0x0001 => disable.
     final hex = nextEnabled
         ? '3E 0B00 030403 0110040500070000'
         : '3E 0B00 030403 0110040500070001';
+    final lightingNotifier = ref.read(
+      roomLightingRuntimeProvider(widget.room.number).notifier,
+    );
+    lightingNotifier.startMasterPowerToggle(nextEnabled, requestId, startedAt);
+    setState(() {
+      _masterPowerEnabled = nextEnabled;
+      _masterPowerDirty = true;
+      _lastTriggeredScene = 6;
+    });
     final ok = await _sendRawCommand(
       hex,
       successMessage: nextEnabled
           ? 'Master power enabled.'
           : 'Master power disabled.',
       failurePrefix: 'Master power command failed',
+      requestId: requestId,
     );
-    if (!mounted || !ok) {
+    if (!ok) {
+      lightingNotifier.failMasterPowerToggle(requestId);
+      if (mounted) {
+        setState(() {
+          _masterPowerEnabled = !nextEnabled;
+          _masterPowerDirty = false;
+        });
+      }
       return;
     }
-    setState(() {
-      _masterPowerEnabled = nextEnabled;
-      _masterPowerDirty = true;
-      _lastTriggeredScene = 6;
-    });
+    lightingNotifier.ackMasterPowerToggle(requestId);
+    if (!mounted) {
+      return;
+    }
   }
 
   @override
