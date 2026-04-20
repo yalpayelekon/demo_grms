@@ -2206,6 +2206,13 @@ func cloneMap(m map[string]interface{}) map[string]interface{} {
 
 func (s *TestCommServer) staticFileHandler(webRoot string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Flutter web release artifacts use stable filenames like index.html and
+		// main.dart.js. After rsync-based deploys, permissive browser caching can
+		// keep serving an older bundle and produce mixed/stale UI states.
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+
 		requestPath := r.URL.Path
 		if strings.Contains(requestPath, "..") {
 			sendText(w, http.StatusForbidden, "Forbidden")
