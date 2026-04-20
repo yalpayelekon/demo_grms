@@ -47,7 +47,10 @@ class DashboardPage extends ConsumerWidget {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Colors.blue.shade900.withOpacity(0.8), Colors.black],
+            colors: const [
+              Color(0xFF1E2330),
+              Color(0xFF171B26),
+            ],
           ),
         ),
         child: SafeArea(
