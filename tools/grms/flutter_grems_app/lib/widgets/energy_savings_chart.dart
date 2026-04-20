@@ -13,7 +13,7 @@ class EnergySavingsChart extends StatefulWidget {
 }
 
 class _EnergySavingsChartState extends State<EnergySavingsChart> {
-  DateRange _dateRange = DateRange.lastMonth;
+  DateRange _dateRange = DateRange.lastYear;
   late List<_EnergyData> _data;
   final Random _random = Random();
 
@@ -38,10 +38,13 @@ class _EnergySavingsChartState extends State<EnergySavingsChart> {
         final variation = (_random.nextDouble() - 0.5) * randomRange;
         final momentum = (previousValue - baseValue) * 0.3;
         final consumption = baseValue + trend + variation + momentum + seasonal;
+        final savingsRatio = 0.17 + _random.nextDouble() * 0.16;
+        final savings = max(12.0, consumption * savingsRatio);
         previousValue = consumption;
         result.add(_EnergyData(
           label: DateFormat('E').format(d),
-          value: consumption,
+          consumption: consumption,
+          savings: savings,
         ));
       }
     } else if (_dateRange == DateRange.lastMonth) {
@@ -53,10 +56,13 @@ class _EnergySavingsChartState extends State<EnergySavingsChart> {
         final variation = (_random.nextDouble() - 0.5) * randomRange;
         final momentum = (previousValue - baseValue) * 0.2;
         final consumption = baseValue + trend + variation + momentum + seasonal;
+        final savingsRatio = 0.16 + _random.nextDouble() * 0.15;
+        final savings = max(10.0, consumption * savingsRatio);
         previousValue = consumption;
         result.add(_EnergyData(
           label: d.day.toString(),
-          value: consumption,
+          consumption: consumption,
+          savings: savings,
         ));
       }
     } else {
@@ -68,10 +74,13 @@ class _EnergySavingsChartState extends State<EnergySavingsChart> {
         final variation = (_random.nextDouble() - 0.5) * randomRange;
         final momentum = (previousValue - baseValue) * 0.25;
         final consumption = baseValue + trend + variation + momentum + seasonal;
+        final savingsRatio = 0.15 + _random.nextDouble() * 0.14;
+        final savings = max(8.0, consumption * savingsRatio);
         previousValue = consumption;
         result.add(_EnergyData(
           label: DateFormat('MMM').format(d),
-          value: consumption,
+          consumption: consumption,
+          savings: savings,
         ));
       }
     }
@@ -89,6 +98,12 @@ class _EnergySavingsChartState extends State<EnergySavingsChart> {
 
   @override
   Widget build(BuildContext context) {
+    final maxSeriesValue = _data
+        .map((entry) => max(entry.consumption, entry.savings))
+        .reduce(max);
+    final chartMaxY = ((maxSeriesValue * 1.25) / 20).ceil() * 20.0;
+    final yInterval = _getYInterval(chartMaxY);
+
     return Column(
       children: [
         Row(
@@ -99,14 +114,23 @@ class _EnergySavingsChartState extends State<EnergySavingsChart> {
             _buildSelector('Year', DateRange.lastYear),
           ],
         ),
+        const SizedBox(height: 10),
+        const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _SeriesLegend(color: Color(0xFF47A3FF), label: 'Consumed'),
+            SizedBox(width: 16),
+            _SeriesLegend(color: Color(0xFF36D084), label: 'Saved'),
+          ],
+        ),
         const SizedBox(height: 16),
         Expanded(
-          child: LineChart(
-            LineChartData(
+          child: BarChart(
+            BarChartData(
+              alignment: BarChartAlignment.spaceAround,
               gridData: const FlGridData(
                 show: true,
                 drawVerticalLine: false,
-                horizontalInterval: 50,
               ),
               titlesData: FlTitlesData(
                 show: true,
@@ -132,7 +156,7 @@ class _EnergySavingsChartState extends State<EnergySavingsChart> {
                 leftTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
-                    interval: 50,
+                    interval: yInterval,
                     reservedSize: 42,
                     getTitlesWidget: (value, meta) {
                       return Text(
@@ -144,28 +168,30 @@ class _EnergySavingsChartState extends State<EnergySavingsChart> {
                 ),
               ),
               borderData: FlBorderData(show: false),
-              minX: 0,
-              maxX: _data.length.toDouble() - 1,
               minY: 0,
-              maxY: 300,
-              lineBarsData: [
-                LineChartBarData(
-                  spots: _data.asMap().entries.map((e) => FlSpot(e.key.toDouble(), e.value.value)).toList(),
-                  isCurved: true,
-                  gradient: const LinearGradient(colors: [Colors.blue, Colors.cyan]),
-                  barWidth: 3,
-                  isStrokeCapRound: true,
-                  dotData: const FlDotData(show: false),
-                  belowBarData: BarAreaData(
-                    show: true,
-                    gradient: LinearGradient(
-                      colors: [Colors.blue.withOpacity(0.3), Colors.blue.withOpacity(0)],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
+              maxY: chartMaxY,
+              barGroups: _data.asMap().entries.map((entry) {
+                final index = entry.key;
+                final point = entry.value;
+                return BarChartGroupData(
+                  x: index,
+                  barsSpace: 3,
+                  barRods: [
+                    BarChartRodData(
+                      toY: point.consumption,
+                      width: 6,
+                      borderRadius: BorderRadius.circular(2),
+                      color: const Color(0xFF47A3FF),
                     ),
-                  ),
-                ),
-              ],
+                    BarChartRodData(
+                      toY: point.savings,
+                      width: 6,
+                      borderRadius: BorderRadius.circular(2),
+                      color: const Color(0xFF36D084),
+                    ),
+                  ],
+                );
+              }).toList(),
             ),
           ),
         ),
@@ -176,6 +202,12 @@ class _EnergySavingsChartState extends State<EnergySavingsChart> {
   double _getInterval() {
     if (_dateRange == DateRange.lastMonth) return 5;
     return 1;
+  }
+
+  double _getYInterval(double maxY) {
+    if (maxY <= 120) return 20;
+    if (maxY <= 240) return 40;
+    return 50;
   }
 
   Widget _buildSelector(String label, DateRange range) {
@@ -208,6 +240,37 @@ class _EnergySavingsChartState extends State<EnergySavingsChart> {
 
 class _EnergyData {
   final String label;
-  final double value;
-  const _EnergyData({required this.label, required this.value});
+  final double consumption;
+  final double savings;
+
+  const _EnergyData({
+    required this.label,
+    required this.consumption,
+    required this.savings,
+  });
+}
+
+class _SeriesLegend extends StatelessWidget {
+  final Color color;
+  final String label;
+
+  const _SeriesLegend({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white70, fontSize: 11),
+        ),
+      ],
+    );
+  }
 }

@@ -5,6 +5,7 @@ import '../models/alarm_models.dart';
 import '../models/service_models.dart';
 import '../providers/alarms_provider.dart';
 import '../providers/room_service_provider.dart';
+import '../providers/zones_provider.dart';
 
 enum ReportType { alarm, service, energy, activity }
 
@@ -25,37 +26,59 @@ class ReportData {
 class ReportsService {
   final List<AlarmData> alarms;
   final List<RoomServiceEntry> roomServices;
+  // ignore: library_private_types_in_public_api
+  final Map<String, _ZoneFloorInfo> roomZoneFloorIndex;
 
   ReportsService({
     required this.alarms,
     required this.roomServices,
+    required this.roomZoneFloorIndex,
   });
 
-  ReportData? buildReport(ReportType type, DateTime? startDate, DateTime? endDate) {
+  ReportData? buildReport(
+    ReportType type,
+    DateTime? startDate,
+    DateTime? endDate,
+  ) {
     if (startDate == null || endDate == null) return null;
 
     // Adjust endDate to include the full day
     final start = DateTime(startDate.year, startDate.month, startDate.day);
     final end = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59);
 
-    final String dateSuffix = "${DateFormat('yyyy-MM-dd').format(start)}_to_${DateFormat('yyyy-MM-dd').format(end)}";
+    final String dateSuffix =
+        "${DateFormat('yyyy-MM-dd').format(start)}_to_${DateFormat('yyyy-MM-dd').format(end)}";
 
     switch (type) {
       case ReportType.alarm:
         final filtered = _filterAlarms(start, end);
         return ReportData(
-          headers: ['ID', 'Room', 'Incident Time', 'Category', 'Status', 'Acknowledgement', 'Ack Time', 'IP Address', 'Details'],
-          rows: filtered.map((a) => [
-            a.id,
-            a.room,
-            a.incidentTime.replaceAll('\n', ' '),
-            a.category,
-            a.status.label,
-            a.acknowledgement.label,
-            a.acknowledgementTime,
-            a.ipAddress ?? '',
-            a.details,
-          ]).toList(),
+          headers: [
+            'Zone / Floor',
+            'Room',
+            'Incident Time',
+            'Category',
+            'Status',
+            'Acknowledgement',
+            'Ack Time',
+            'IP Address',
+            'Details',
+          ],
+          rows: filtered
+              .map(
+                (a) => [
+                  _zoneFloorCell(a.room),
+                  a.room,
+                  a.incidentTime.replaceAll('\n', ' '),
+                  a.category,
+                  a.status.label,
+                  a.acknowledgement.label,
+                  a.acknowledgementTime,
+                  a.ipAddress ?? '',
+                  a.details,
+                ],
+              )
+              .toList(),
           filename: "Alarm_Report_$dateSuffix",
           title: "Alarm Reports",
         );
@@ -63,7 +86,16 @@ class ReportsService {
       case ReportType.service:
         final filtered = _filterServices(start, end);
         return ReportData(
-          headers: ['Row', 'Room', 'Floor', 'Service Type', 'Service State', 'Activation Time', 'Delayed Min', 'Note'],
+          headers: [
+            'Row',
+            'Room',
+            'Floor',
+            'Service Type',
+            'Service State',
+            'Activation Time',
+            'Delayed Min',
+            'Note',
+          ],
           rows: filtered.asMap().entries.map((entry) {
             final idx = entry.key + 1;
             final s = entry.value;
@@ -86,7 +118,16 @@ class ReportsService {
         final data = _generateEnergyData(start, end);
         return ReportData(
           headers: ['Date', 'Room', 'Energy Consumption (kWh)', 'Cost (\$)'],
-          rows: data.map((e) => [e['date'], e['room'], e['energyConsumption'], e['cost']]).toList(),
+          rows: data
+              .map(
+                (e) => [
+                  e['date'],
+                  e['room'],
+                  e['energyConsumption'],
+                  e['cost'],
+                ],
+              )
+              .toList(),
           filename: "Energy_Report_$dateSuffix",
           title: "Energy Reports",
         );
@@ -95,7 +136,9 @@ class ReportsService {
         final data = _generateActivityData(start, end);
         return ReportData(
           headers: ['ID', 'Source', 'Message', 'Timestamp'],
-          rows: data.map((e) => [e['id'], e['source'], e['message'], e['timestamp']]).toList(),
+          rows: data
+              .map((e) => [e['id'], e['source'], e['message'], e['timestamp']])
+              .toList(),
           filename: "Activity_Report_$dateSuffix",
           title: "Activity Reports",
         );
@@ -108,8 +151,8 @@ class ReportsService {
       try {
         final datePart = a.incidentTime.split('\n')[0].trim();
         final itemDate = fmt.parse(datePart);
-        return itemDate.isAfter(start.subtract(const Duration(seconds: 1))) && 
-               itemDate.isBefore(end.add(const Duration(seconds: 1)));
+        return itemDate.isAfter(start.subtract(const Duration(seconds: 1))) &&
+            itemDate.isBefore(end.add(const Duration(seconds: 1)));
       } catch (e) {
         return false;
       }
@@ -121,19 +164,32 @@ class ReportsService {
     return roomServices.where((s) {
       try {
         final activationTime = format.parse(s.activationTime);
-        return activationTime.isAfter(start.subtract(const Duration(seconds: 1))) && 
-               activationTime.isBefore(end.add(const Duration(seconds: 1)));
+        return activationTime.isAfter(
+              start.subtract(const Duration(seconds: 1)),
+            ) &&
+            activationTime.isBefore(end.add(const Duration(seconds: 1)));
       } catch (e) {
         return false;
       }
     }).toList();
   }
 
+  String _zoneFloorCell(String roomLabel) {
+    final roomNumber = roomLabel
+        .replaceAll(RegExp(r'^\s*room\s+', caseSensitive: false), '')
+        .trim();
+    final info = roomZoneFloorIndex[roomNumber];
+    if (info == null) {
+      return '-\n-';
+    }
+    return '${info.zone}\n${info.floor}';
+  }
+
   List<Map<String, dynamic>> _generateEnergyData(DateTime start, DateTime end) {
     final random = Random();
     final days = end.difference(start).inDays;
     final List<Map<String, dynamic>> data = [];
-    
+
     for (int i = 0; i <= min(days, 30); i++) {
       final date = start.add(Duration(days: i));
       data.add({
@@ -146,10 +202,13 @@ class ReportsService {
     return data;
   }
 
-  List<Map<String, dynamic>> _generateActivityData(DateTime start, DateTime end) {
+  List<Map<String, dynamic>> _generateActivityData(
+    DateTime start,
+    DateTime end,
+  ) {
     // Activity is partially derived from alarms and room services
     final List<Map<String, dynamic>> activities = [];
-    
+
     for (var a in _filterAlarms(start, end)) {
       activities.add({
         'id': 'AL-${a.id}',
@@ -172,20 +231,47 @@ class ReportsService {
   }
 
   String convertToCSV(ReportData report) {
-    final List<List<dynamic>> csvData = [
-      report.headers,
-      ...report.rows,
-    ];
+    final List<List<dynamic>> csvData = [report.headers, ...report.rows];
     // Standard CSV implementation as fallback for package issues
-    return csvData.map((row) => row.map((e) {
-      final s = e.toString().replaceAll('"', '""');
-      return s.contains(',') || s.contains('\n') || s.contains('"') ? '"$s"' : s;
-    }).join(',')).join('\r\n');
+    return csvData
+        .map(
+          (row) => row
+              .map((e) {
+                final s = e.toString().replaceAll('"', '""');
+                return s.contains(',') || s.contains('\n') || s.contains('"')
+                    ? '"$s"'
+                    : s;
+              })
+              .join(','),
+        )
+        .join('\r\n');
   }
+}
+
+class _ZoneFloorInfo {
+  final String zone;
+  final String floor;
+
+  const _ZoneFloorInfo({required this.zone, required this.floor});
 }
 
 final reportsServiceProvider = Provider<ReportsService>((ref) {
   final alarms = ref.watch(alarmsProvider).allAlarms;
   final roomServices = ref.watch(roomServiceProvider);
-  return ReportsService(alarms: alarms, roomServices: roomServices);
+  final zonesData = ref.watch(zonesProvider).zonesData;
+  final roomZoneFloorIndex = <String, _ZoneFloorInfo>{};
+
+  zonesData.categoryNamesBlockFloorMap.forEach((zone, floors) {
+    floors.forEach((floor, rooms) {
+      for (final room in rooms) {
+        roomZoneFloorIndex[room] = _ZoneFloorInfo(zone: zone, floor: floor);
+      }
+    });
+  });
+
+  return ReportsService(
+    alarms: alarms,
+    roomServices: roomServices,
+    roomZoneFloorIndex: roomZoneFloorIndex,
+  );
 });

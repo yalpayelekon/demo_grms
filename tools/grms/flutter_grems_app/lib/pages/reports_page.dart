@@ -304,6 +304,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                     : SingleChildScrollView(
                         padding: const EdgeInsets.symmetric(horizontal: 24),
                         child: Table(
+                          columnWidths: _buildPreviewColumnWidths(report),
                           border: TableBorder.all(
                             color: Colors.white.withOpacity(0.1),
                             width: 1,
@@ -330,17 +331,20 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                             ),
                             ...report.rows.map(
                               (row) => TableRow(
-                                children: row
-                                    .map(
-                                      (cell) => Padding(
+                                children: row.asMap().entries.map((entry) {
+                                      final index = entry.key;
+                                      final cell = entry.value;
+                                      final header = index < report.headers.length
+                                          ? report.headers[index]
+                                          : '';
+                                      return Padding(
                                         padding: const EdgeInsets.all(12),
                                         child: Text(
-                                          cell.toString(),
+                                          _formatPreviewCellValue(header, cell),
                                           style: const TextStyle(fontSize: 12),
                                         ),
-                                      ),
-                                    )
-                                    .toList(),
+                                      );
+                                    }).toList(),
                               ),
                             ),
                           ],
@@ -394,6 +398,31 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
     );
 
     return pdf.save();
+  }
+
+  String _formatPreviewCellValue(String header, dynamic cell) {
+    final value = cell?.toString() ?? '';
+    if (header.toLowerCase() == 'room') {
+      return value.replaceFirst(RegExp(r'^\s*room\s+', caseSensitive: false), '');
+    }
+    return value;
+  }
+
+  Map<int, TableColumnWidth>? _buildPreviewColumnWidths(ReportData report) {
+    final hasAlarmPreviewColumns =
+        report.headers.contains('Zone / Floor') &&
+        report.headers.contains('Room') &&
+        report.headers.contains('IP Address');
+
+    if (!hasAlarmPreviewColumns) {
+      return null;
+    }
+
+    return const <int, TableColumnWidth>{
+      0: FlexColumnWidth(0.9), // Zone / Floor
+      1: FlexColumnWidth(0.8), // Room
+      7: FlexColumnWidth(0.71), // IP Address (mostly empty)
+    };
   }
 }
 
