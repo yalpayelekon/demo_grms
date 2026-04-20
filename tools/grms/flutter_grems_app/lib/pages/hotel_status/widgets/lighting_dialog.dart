@@ -63,6 +63,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
   bool _loadingHvac = false;
   bool _updatingBlinds = false;
   bool _masterPowerEnabled = true;
+  bool _masterPowerDirty = false;
   final GlobalKey _layoutStackKey = GlobalKey();
   final Map<String, Offset> _dragCanvasPositions = <String, Offset>{};
   String? _draggingKey;
@@ -218,7 +219,13 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     _initialIsOn = _isOn;
     _initialMode = _mode;
     _initialFanMode = _fanMode;
-    _masterPowerEnabled = room.lightingOn;
+    if (_masterPowerDirty) {
+      if (room.lightingOn == _masterPowerEnabled) {
+        _masterPowerDirty = false;
+      }
+    } else {
+      _masterPowerEnabled = room.lightingOn;
+    }
   }
 
   int _normalizeMode(int? raw) {
@@ -422,25 +429,37 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
       final prefix = failurePrefix ?? 'Command failed';
       final message = '$prefix: ${result.error.message}';
       setState(() => _errorMessage = message);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      debugPrint(
+        'LightingDialog: raw command failed room=${widget.room.number} '
+        'requestId=$requestId hex="$hexCommand" error="$message"',
+      );
       return false;
     }
     if (successMessage != null && successMessage.isNotEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(successMessage)));
+      debugPrint(
+        'LightingDialog: raw command success room=${widget.room.number} '
+        'requestId=$requestId hex="$hexCommand" message="$successMessage"',
+      );
     }
-    await ref.read(roomSnapshotProvider(widget.room.number).notifier).refreshNow();
+    // Avoid immediate post-write polling race; schedule a delayed refresh.
+    unawaited(
+      Future<void>.delayed(const Duration(milliseconds: 700), () async {
+        if (!mounted) {
+          return;
+        }
+        await ref.read(roomSnapshotProvider(widget.room.number).notifier).refreshNow();
+      }),
+    );
     return true;
   }
 
   Future<void> _toggleMasterPower() async {
     final nextEnabled = !_masterPowerEnabled;
+    // Device semantics are inverted for this command family:
+    // 0x0000 => enable master lighting, 0x0001 => disable.
     final hex = nextEnabled
-        ? '3E 000B 030403 0110040500070001'
-        : '3E 000B 030403 0110040500070000';
+        ? '3E 0B00 030403 0110040500070000'
+        : '3E 0B00 030403 0110040500070001';
     final ok = await _sendRawCommand(
       hex,
       successMessage: nextEnabled
@@ -453,6 +472,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     }
     setState(() {
       _masterPowerEnabled = nextEnabled;
+      _masterPowerDirty = true;
       _lastTriggeredScene = 6;
     });
   }
@@ -828,8 +848,8 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
   Future<void> _setBlindsLevel({required int targetLevel}) async {
     setState(() => _updatingBlinds = true);
     final hex = targetLevel > 0
-        ? '3E 000B 030403 0010020500000000'
-        : '3E 000B 030403 0010020700000000';
+        ? '3E 0B00 030403 0010020500000000'
+        : '3E 0B00 030403 0010020700000000';
     await _sendRawCommand(
       hex,
       successMessage: targetLevel > 0
@@ -844,9 +864,9 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
 
   String _serviceCommandHex(ServiceType serviceType) {
     return switch (serviceType) {
-      ServiceType.dnd => '3E 000B 030403 0F10090000000000',
-      ServiceType.laundry => '3E 000B 030403 0F100A0000000000',
-      ServiceType.mur => '3E 000B 030403 0F100B0000000000',
+      ServiceType.dnd => '3E 0B00 030403 0F10090000000000',
+      ServiceType.laundry => '3E 0B00 030403 0F100A0000000000',
+      ServiceType.mur => '3E 0B00 030403 0F100B0000000000',
     };
   }
 

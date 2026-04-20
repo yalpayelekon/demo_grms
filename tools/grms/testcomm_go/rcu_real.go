@@ -709,6 +709,9 @@ func (r *realRcuClient) ExecuteRawCommand(frame []byte, requestID string) map[st
 				r.closeConnLocked()
 				return nil, err
 			}
+			// Treat raw scene-like writes as scene activity so refresh polling
+			// waits for the same cool-down window and avoids read/write races.
+			r.lastSceneAt.Store(time.Now().UnixNano())
 			log.Printf("rcu.raw.trigger sent room=%s frame_hex=% X requestId=%s", r.room, frame, requestID)
 			return map[string]interface{}{
 				"triggered": true,
