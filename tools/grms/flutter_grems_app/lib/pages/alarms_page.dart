@@ -38,6 +38,8 @@ class _AlarmsPageState extends ConsumerState<AlarmsPage> {
                         scrollDirection: Axis.horizontal,
                         child: SingleChildScrollView(
                           child: DataTable(
+                            columnSpacing: 20,
+                            horizontalMargin: 8,
                             columns: const [
                               DataColumn(label: Text('Room')),
                               DataColumn(label: Text('Incident Time')),
@@ -65,10 +67,9 @@ class _AlarmsPageState extends ConsumerState<AlarmsPage> {
 
   Widget _buildHeader(AlarmsState state) {
     final notifier = ref.read(alarmsProvider.notifier);
-    final titleStyle = Theme.of(context).textTheme.titleLarge;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor.withOpacity(0.5),
         border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.1))),
@@ -77,8 +78,6 @@ class _AlarmsPageState extends ConsumerState<AlarmsPage> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-          Text('Alarms', style: titleStyle),
-          const SizedBox(width: 32),
           _buildFilterGroup('Category', state.categoryFilter, (v) => notifier.setFilters(category: v), ['All', 'Long Inact.', 'Open Door', 'PMS', 'RCU', 'Lighting', 'HVAC', 'HK']),
           const SizedBox(width: 16),
           _buildFilterGroup('Acknowledgement', state.ackFilter, (v) => notifier.setFilters(ack: v), ['All', 'Waiting Ack', 'Acknowledged']),
@@ -108,7 +107,11 @@ class _AlarmsPageState extends ConsumerState<AlarmsPage> {
 
   DataRow _buildRow(AlarmData alarm) {
     return DataRow(cells: [
-      DataCell(Text(alarm.room)),
+      DataCell(
+        Text(
+          alarm.room.replaceFirst(RegExp(r'^Room\s+', caseSensitive: false), ''),
+        ),
+      ),
       DataCell(Text(alarm.incidentTime)),
       DataCell(_buildCategoryBadge(alarm.category)),
       DataCell(_buildAckBadge(alarm)),

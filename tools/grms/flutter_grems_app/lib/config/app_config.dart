@@ -19,6 +19,8 @@ class AppConfig {
 
 enum DeploymentMode { local, deployed }
 
+DeploymentMode resolveDeploymentMode() => _resolveDeploymentMode();
+
 String normalizeBaseUrl(String url) => url.replaceAll(RegExp(r'/+$'), '');
 
 String resolveRuntimeApiBaseUrl({String fallback = 'http://127.0.0.1:8081'}) {

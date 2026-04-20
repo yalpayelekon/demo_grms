@@ -66,7 +66,7 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   Widget _buildSidebar(BuildContext context, AuthState authState, List<_NavDestination> destinations, int selectedIndex) {
     return Container(
-      width: _isCollapsed ? 80 : 260,
+      width: _isCollapsed ? 76 : 232,
       color: Theme.of(context).colorScheme.surface,
       child: Column(
         children: [

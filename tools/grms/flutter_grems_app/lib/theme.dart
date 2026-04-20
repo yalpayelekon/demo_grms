@@ -11,13 +11,23 @@ ThemeData buildAppTheme() {
     brightness: Brightness.dark,
     surface: surface,
   );
+  final textTheme = Typography.material2021(
+    platform: TargetPlatform.android,
+  ).white.apply(
+    fontFamily: 'Arial',
+    bodyColor: Colors.white,
+    displayColor: Colors.white,
+  );
 
   return ThemeData(
     useMaterial3: true,
     fontFamily: 'Arial',
+    textTheme: textTheme,
+    primaryTextTheme: textTheme,
     colorScheme: scheme,
     scaffoldBackgroundColor: background,
     cardColor: card,
+    dividerColor: Colors.white.withOpacity(0.1),
     appBarTheme: const AppBarTheme(
       backgroundColor: surface,
       foregroundColor: Colors.white,

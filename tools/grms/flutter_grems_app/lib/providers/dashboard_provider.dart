@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import '../config/app_config.dart';
 import '../models/alarm_models.dart';
 import '../models/dashboard_models.dart';
 import '../models/room_models.dart';
@@ -31,11 +32,13 @@ class DashboardNotifier extends Notifier<DashboardState> {
 
   @override
   DashboardState build() {
-    _fetchWeather();
-    _weatherTimer = Timer.periodic(
-      const Duration(minutes: 30),
-      (_) => _fetchWeather(),
-    );
+    if (_shouldFetchWeather) {
+      _fetchWeather();
+      _weatherTimer = Timer.periodic(
+        const Duration(minutes: 30),
+        (_) => _fetchWeather(),
+      );
+    }
 
     ref.onDispose(() {
       _weatherTimer?.cancel();
@@ -55,6 +58,9 @@ class DashboardNotifier extends Notifier<DashboardState> {
 
     return DashboardState(stats: stats);
   }
+
+  bool get _shouldFetchWeather =>
+      resolveDeploymentMode() == DeploymentMode.local;
 
   DashboardStats _calculateStats(
     ZonesState zones,
@@ -277,6 +283,10 @@ class DashboardNotifier extends Notifier<DashboardState> {
   }
 
   Future<void> _fetchWeather() async {
+    if (!_shouldFetchWeather) {
+      return;
+    }
+
     try {
       final response = await http.get(
         Uri.parse(

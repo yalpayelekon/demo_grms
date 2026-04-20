@@ -23,10 +23,17 @@ class DashboardPage extends ConsumerWidget {
     final isTablet = size.width >= 850 && size.width < 1200;
     final canUseFixedTabletGrid =
         isTablet && size.width >= 1100 && size.height >= 800;
+    final canUseFixedLandscapeTabletGrid =
+        size.width >= 1200 && size.width < 1360 && size.height >= 820;
     final useCompactCards = size.height <= 920 || size.width <= 1360;
-    final useUltraCompactCards = isTablet || size.width < 850;
-    final useTightTabletSpacing = canUseFixedTabletGrid;
-    final canUseFixedGrid = canUseFixedDesktopGrid || canUseFixedTabletGrid;
+    final useUltraCompactCards =
+        isTablet || size.width < 850 || canUseFixedLandscapeTabletGrid;
+    final useTightTabletSpacing =
+        canUseFixedTabletGrid || canUseFixedLandscapeTabletGrid;
+    final canUseFixedGrid =
+        canUseFixedDesktopGrid ||
+        canUseFixedTabletGrid ||
+        canUseFixedLandscapeTabletGrid;
 
     return Scaffold(
       appBar: AppBar(

@@ -33,10 +33,6 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
   @override
   Widget build(BuildContext context) {
     final reportsService = ref.watch(reportsServiceProvider);
-    final titleStyle = Theme.of(context).textTheme.titleLarge;
-    final subtitleStyle = Theme.of(
-      context,
-    ).textTheme.bodyMedium?.copyWith(color: Colors.grey);
 
     return Scaffold(
       body: SingleChildScrollView(
@@ -44,9 +40,6 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Reports', style: titleStyle),
-            Text('Generate and view system reports', style: subtitleStyle),
-            const SizedBox(height: 32),
             _buildReportRow(context, reportsService, ReportType.alarm, 'Alarm Reports', 'Historical alarm data and response times', '🔔'),
             const SizedBox(height: 16),
             _buildReportRow(context, reportsService, ReportType.service, 'Service Reports', 'Room service status and workflow statistics', '🛎️'),

@@ -64,7 +64,7 @@ class _ServiceStatusPageState extends ConsumerState<ServiceStatusPage> {
             ),
             const SizedBox(height: 12),
             _buildHeader(),
-            const SizedBox(height: 24),
+            const SizedBox(height: 12),
             Expanded(child: _buildTable(paginatedServices, zonesState)),
             if (filteredServices.isNotEmpty)
               _buildFooter(filteredServices.length, totalPages),
@@ -78,52 +78,15 @@ class _ServiceStatusPageState extends ConsumerState<ServiceStatusPage> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isNarrow = constraints.maxWidth < 1100;
-        final titleStyle = Theme.of(context).textTheme.titleLarge;
-        final subtitleStyle = Theme.of(
-          context,
-        ).textTheme.bodyMedium?.copyWith(
-          color: Colors.white.withOpacity(0.6),
-        );
         if (isNarrow) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Room Services',
-                style: titleStyle,
-              ),
-              Text(
-                'Track DND, make-up-room, and laundry responses',
-                style: subtitleStyle,
-              ),
-              const SizedBox(height: 16),
-              _buildFilters(),
-            ],
-          );
+          return _buildFilters();
         }
 
         return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Room Services',
-                    style: titleStyle,
-                  ),
-                  Text(
-                    'Track DND, make-up-room, and laundry responses',
-                    style: subtitleStyle,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 24),
-            Expanded(
               child: Align(
-                alignment: Alignment.topRight,
+                alignment: Alignment.topLeft,
                 child: _buildFilters(),
               ),
             ),
@@ -202,7 +165,7 @@ class _ServiceStatusPageState extends ConsumerState<ServiceStatusPage> {
         scrollDirection: Axis.vertical,
         child: Table(
           columnWidths: const {
-            0: FlexColumnWidth(1),
+            0: FlexColumnWidth(0.82),
             1: FlexColumnWidth(1),
             2: FlexColumnWidth(1),
             3: FlexColumnWidth(1),
@@ -230,7 +193,7 @@ class _ServiceStatusPageState extends ConsumerState<ServiceStatusPage> {
                     verticalAlignment: TableCellVerticalAlignment.middle,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
+                        horizontal: 12,
                         vertical: 12,
                       ),
                       child: Column(

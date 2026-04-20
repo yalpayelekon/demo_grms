@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'theme.dart';
 import 'providers/auth_provider.dart';
 import 'providers/coordinates_sync_provider.dart';
 import 'app_router.dart';
@@ -25,14 +26,7 @@ class MyApp extends ConsumerWidget {
     return MaterialApp.router(
       title: 'GRMS',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-        dividerColor: Colors.white.withOpacity(0.1),
-      ),
+      theme: buildAppTheme(),
       routerConfig: router,
       builder: (context, child) {
         if (authState.isInitialized) {
