@@ -406,7 +406,8 @@ class _AlarmCategoryCard extends StatelessWidget {
   final String label;
   final int count;
   final int? totalRooms;
-  final IconData icon;
+  final IconData? icon;
+  final String? imageAssetPath;
   final bool compact;
   final bool tightHeight;
 
@@ -414,10 +415,11 @@ class _AlarmCategoryCard extends StatelessWidget {
     required this.label,
     required this.count,
     this.totalRooms,
-    required this.icon,
+    this.icon,
+    this.imageAssetPath,
     this.compact = false,
     this.tightHeight = false,
-  });
+  }) : assert(icon != null || imageAssetPath != null);
 
   @override
   Widget build(BuildContext context) {
@@ -436,7 +438,16 @@ class _AlarmCategoryCard extends StatelessWidget {
           Expanded(
             child: Row(
               children: [
-                Icon(icon, size: compact ? 25 : 28, color: Colors.white70),
+                if (imageAssetPath != null)
+                  Image.asset(
+                    imageAssetPath!,
+                    width: 32,
+                    height: 32,
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
+                  )
+                else
+                  Icon(icon, size: compact ? 25 : 28, color: Colors.white70),
                 SizedBox(width: compact ? 4 : 5),
                 Expanded(
                   child: Text(
@@ -515,7 +526,7 @@ class _OccupancyPanel extends StatelessWidget {
                 label: statusStat.label,
                 count: statusStat.rooms,
                 totalRooms: stats.totalRooms,
-                icon: _occupancyIconForLabel(statusStat.label),
+                imageAssetPath: _occupancyAssetForLabel(statusStat.label),
                 compact: compact,
                 tightHeight: true,
               );
@@ -526,13 +537,27 @@ class _OccupancyPanel extends StatelessWidget {
     );
   }
 
-  IconData _occupancyIconForLabel(String label) {
+  String _occupancyAssetForLabel(String label) {
     final normalized = label.toLowerCase();
-    if (normalized.contains('occupied')) return Icons.person_outline;
-    if (normalized.contains('vacant')) return Icons.bed_outlined;
-    if (normalized.contains('hk')) return Icons.cleaning_services_outlined;
-    if (normalized.contains('malfunction')) return Icons.build_circle_outlined;
-    return Icons.hotel_outlined;
+    if (normalized.contains('unrented') && normalized.contains('hk')) {
+      return 'assets/images/room_status/whitehousekeeping.png';
+    }
+    if (normalized.contains('unrented') && normalized.contains('vacant')) {
+      return 'assets/images/room_status/white.png';
+    }
+    if (normalized.contains('rented') && normalized.contains('occupied')) {
+      return 'assets/images/room_status/greenadamvaliz.png';
+    }
+    if (normalized.contains('rented') && normalized.contains('hk')) {
+      return 'assets/images/room_status/greenhousekeeping.png';
+    }
+    if (normalized.contains('rented') && normalized.contains('vacant')) {
+      return 'assets/images/room_status/greenvaliz.png';
+    }
+    if (normalized.contains('malfunction')) {
+      return 'assets/images/room_status/redadamvaliz.png';
+    }
+    return 'assets/images/room_status/white.png';
   }
 }
 
@@ -555,60 +580,47 @@ class _ServicePanel extends StatelessWidget {
       ultraCompact: ultraCompact,
       child: Column(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: _CountBox(
-                  label: 'Laundry',
-                  value: stats.lndCount.toString(),
-                  icon: Icons.local_laundry_service_outlined,
-                  compact: compact,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _CountBox(
-                  label: 'Make Up Room',
-                  value: stats.murCount.toString(),
-                  icon: Icons.cleaning_services_outlined,
-                  compact: compact,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: compact ? 12 : 16),
-          Row(
-            children: [
-              Expanded(
-                child: _SmallStat(
-                  label: 'Delayed',
-                  value: stats.delayedCount.toString(),
-                  icon: Icons.schedule_outlined,
-                  compact: compact,
-                ),
-              ),
-              Expanded(
-                child: _SmallStat(
-                  label: 'In Progress',
-                  value: stats.inProgressCount.toString(),
-                  icon: Icons.sync_outlined,
-                  compact: compact,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: compact ? 12 : 16),
           GridView.count(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             crossAxisCount: 2,
             mainAxisSpacing: compact ? 4 : 6,
-            crossAxisSpacing: compact ? 10 : 12,
-            childAspectRatio: compact ? 2.2 : 2.4,
+            crossAxisSpacing: compact ? 6 : 8,
+            childAspectRatio: compact ? 3.0 : 3.2,
             children: [
-              _InlineServiceMetric(
+              _ServiceCompactCard(
+                label: 'DND',
+                valueText: stats.dndCount.toString(),
+                icon: Icons.do_not_disturb_on_outlined,
+                compact: compact,
+              ),
+              _ServiceCompactCard(
+                label: 'Laundry',
+                valueText: stats.lndCount.toString(),
+                icon: Icons.local_laundry_service_outlined,
+                compact: compact,
+              ),
+              _ServiceCompactCard(
+                label: 'Make Up Room',
+                valueText: stats.murCount.toString(),
+                icon: Icons.cleaning_services_outlined,
+                compact: compact,
+              ),
+              _ServiceCompactCard(
+                label: 'Delayed',
+                valueText: stats.delayedCount.toString(),
+                icon: Icons.schedule_outlined,
+                compact: compact,
+              ),
+              _ServiceCompactCard(
+                label: 'In Progress',
+                valueText: stats.inProgressCount.toString(),
+                icon: Icons.sync_outlined,
+                compact: compact,
+              ),
+              _ServiceCompactCard(
                 label: 'Avg Response Time',
-                value: '${stats.averageServiceRequestMinutes} min',
+                valueText: '${stats.averageServiceRequestMinutes} min',
                 icon: Icons.timer_outlined,
                 compact: compact,
               ),
@@ -620,15 +632,15 @@ class _ServicePanel extends StatelessWidget {
   }
 }
 
-class _InlineServiceMetric extends StatelessWidget {
+class _ServiceCompactCard extends StatelessWidget {
   final String label;
-  final String value;
+  final String valueText;
   final IconData icon;
   final bool compact;
 
-  const _InlineServiceMetric({
+  const _ServiceCompactCard({
     required this.label,
-    required this.value,
+    required this.valueText,
     required this.icon,
     this.compact = false,
   });
@@ -637,29 +649,29 @@ class _InlineServiceMetric extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: compact ? 6 : 8,
-        vertical: compact ? 4 : 6,
+        horizontal: compact ? 7 : 8,
+        vertical: compact ? 3 : 4,
       ),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.03),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withOpacity(0.12)),
       ),
       child: Row(
         children: [
           Expanded(
             child: Row(
               children: [
-                Icon(icon, size: compact ? 29 : 31, color: Colors.white70),
-                const SizedBox(width: 4),
+                Icon(icon, size: compact ? 25 : 28, color: Colors.white70),
+                SizedBox(width: compact ? 4 : 5),
                 Expanded(
                   child: Text(
                     label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.white60,
-                      fontSize: compact ? 10 : 11,
+                      color: Colors.white70,
+                      fontSize: compact ? 9 : 10,
                     ),
                   ),
                 ),
@@ -668,11 +680,11 @@ class _InlineServiceMetric extends StatelessWidget {
           ),
           SizedBox(width: compact ? 6 : 8),
           Text(
-            value,
+            valueText,
             style: TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.bold,
-              fontSize: compact ? 11 : 12,
+              fontSize: compact ? 12 : 13,
             ),
           ),
         ],
@@ -913,120 +925,6 @@ class _CommunicationPanel extends StatelessWidget {
             ),
           );
         }).toList(),
-      ),
-    );
-  }
-}
-
-class _CountBox extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final bool compact;
-  const _CountBox({
-    required this.label,
-    required this.value,
-    required this.icon,
-    this.compact = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.symmetric(vertical: compact ? 10 : 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.03),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          const SizedBox(width: 10),
-          Expanded(
-            child: Row(
-              children: [
-                Icon(icon, size: compact ? 31 : 34, color: Colors.white70),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white54, fontSize: 12),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            value,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: compact ? 18 : 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(width: 10),
-        ],
-      ),
-    );
-  }
-}
-
-class _SmallStat extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final bool compact;
-  const _SmallStat({
-    required this.label,
-    required this.value,
-    required this.icon,
-    this.compact = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 8 : 10,
-        vertical: compact ? 8 : 10,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.03),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Row(
-              children: [
-                Icon(icon, size: compact ? 29 : 31, color: Colors.white70),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white60,
-                      fontSize: compact ? 10 : 11,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
       ),
     );
   }

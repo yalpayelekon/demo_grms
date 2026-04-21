@@ -15,6 +15,7 @@ class DashboardStats {
 
   final int lndCount;
   final int murCount;
+  final int dndCount;
   final int delayedCount;
   final int inProgressCount;
   final int responseRate;
@@ -32,6 +33,7 @@ class DashboardStats {
     required this.alarmStats,
     required this.lndCount,
     required this.murCount,
+    required this.dndCount,
     required this.delayedCount,
     required this.inProgressCount,
     required this.responseRate,
@@ -51,6 +53,7 @@ class DashboardStats {
       alarmStats: [],
       lndCount: 0,
       murCount: 0,
+      dndCount: 0,
       delayedCount: 0,
       inProgressCount: 0,
       responseRate: 100,

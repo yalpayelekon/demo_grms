@@ -252,6 +252,7 @@ class DashboardNotifier extends Notifier<DashboardState> {
     // Room Service Stats
     int lnd = 0;
     int mur = 0;
+    int dnd = 0;
     int delayed = 0;
     int inProgress = 0;
     int totalActive = 0;
@@ -259,6 +260,9 @@ class DashboardNotifier extends Notifier<DashboardState> {
     int finishedServiceCount = 0;
 
     for (var s in services) {
+      if (s.serviceType == ServiceType.dnd && s.serviceState != 'Off') {
+        dnd++;
+      }
       if (s.serviceType != ServiceType.laundry &&
           s.serviceType != ServiceType.mur) {
         continue;
@@ -308,6 +312,7 @@ class DashboardNotifier extends Notifier<DashboardState> {
       alarmStats: alarmStats,
       lndCount: lnd,
       murCount: mur,
+      dndCount: dnd,
       delayedCount: delayed,
       inProgressCount: inProgress,
       responseRate: responseRate,
