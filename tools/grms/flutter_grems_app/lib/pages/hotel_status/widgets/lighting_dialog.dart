@@ -18,6 +18,7 @@ import '../../../providers/coordinates_sync_provider.dart';
 import '../../../providers/demo_room_snapshot_provider.dart';
 import '../../../lighting/lighting_alarm_style.dart';
 import '../../../lighting/lighting_device_merge.dart';
+import '../../../providers/alarms_provider.dart';
 import '../../../providers/hotel_status_provider.dart';
 import '../../../providers/lighting_devices_provider.dart';
 import '../../../providers/room_alias_provider.dart';
@@ -175,6 +176,13 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     _roomLightingSubscription ??= ref.listenManual<RoomLightingRuntimeState>(
       roomLightingRuntimeProvider(widget.room.number),
       (previous, next) {
+        final mergedDevices = mergeLightingConfigsWithLive(
+          configs: ref.read(lightingDevicesProvider.notifier).configs,
+          live: next.lighting,
+        );
+        ref
+            .read(alarmsProvider.notifier)
+            .syncLightingDeviceAlarmsForRoom(widget.room.number, mergedDevices);
         if (!mounted) {
           return;
         }
@@ -206,6 +214,13 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
       _lightingResponse = currentLighting.lighting;
       _warningMessage = null;
       _updateDeviceControllers();
+      final mergedDevices = mergeLightingConfigsWithLive(
+        configs: ref.read(lightingDevicesProvider.notifier).configs,
+        live: currentLighting.lighting,
+      );
+      ref
+          .read(alarmsProvider.notifier)
+          .syncLightingDeviceAlarmsForRoom(widget.room.number, mergedDevices);
     }
   }
 

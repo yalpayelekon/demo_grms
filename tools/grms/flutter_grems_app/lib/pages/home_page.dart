@@ -245,7 +245,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Gloria Golf Resort',
+            'Steinkjer Hotel',
             style: TextStyle(
               fontSize: 32,
               fontWeight: FontWeight.bold,

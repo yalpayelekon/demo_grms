@@ -87,8 +87,8 @@ class _AppShellState extends ConsumerState<AppShell> {
               children: [
                 Image.asset(
                   'assets/images/vanpeelogo.png',
-                  width: _isCollapsed ? 56 : 92,
-                  height: _isCollapsed ? 56 : 92,
+                  width: _isCollapsed ? 66 : 112,
+                  height: _isCollapsed ? 66 : 112,
                   fit: BoxFit.contain,
                 ),
               ],

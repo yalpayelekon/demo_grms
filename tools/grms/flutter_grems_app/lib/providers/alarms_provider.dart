@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../models/alarm_models.dart';
+import '../models/lighting_device.dart';
 import 'zones_provider.dart';
 
 class AlarmsState {
@@ -371,6 +372,102 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
         );
       }
     }
+  }
+
+  void syncLightingDeviceAlarmsForRoom(
+    String roomNumber,
+    List<LightingDeviceSummary> devices,
+  ) {
+    final normalizedRoom = roomNumber.trim();
+    if (normalizedRoom.isEmpty) {
+      return;
+    }
+    final roomLabel = normalizedRoom.toLowerCase().startsWith('room ')
+        ? normalizedRoom
+        : 'Room $normalizedRoom';
+    final roomPrefix = _lightingRoomPrefix(normalizedRoom);
+    final now = DateTime.now();
+
+    final activeDevices = devices.where((d) => d.alarm).toList(growable: false);
+    final activeIds = <String>{};
+    final updated = List<AlarmData>.from(state.allAlarms);
+
+    for (final device in activeDevices) {
+      final alarmId = _lightingAlarmId(normalizedRoom, device);
+      activeIds.add(alarmId);
+      final detail =
+          'RCU alarm source: Device-level lighting gear alarm. '
+          'Device: ${device.type.name.toUpperCase()} #${device.address} '
+          '(${device.name.trim().isEmpty ? 'Unnamed' : device.name.trim()}).';
+      final index = updated.indexWhere((alarm) => alarm.id == alarmId);
+
+      if (index < 0) {
+        updated.insert(
+          0,
+          AlarmData(
+            id: alarmId,
+            room: roomLabel,
+            incidentTime: _formatIncidentTime(now),
+            category: 'RCU',
+            acknowledgement: AlarmAcknowledgement.waitingAck,
+            acknowledgementTime: '',
+            status: AlarmStatus.waitingAck,
+            details: detail,
+          ),
+        );
+        continue;
+      }
+
+      final existing = updated[index];
+      if (existing.status == AlarmStatus.fixed) {
+        updated[index] = existing.copyWith(
+          incidentTime: _formatIncidentTime(now),
+          acknowledgement: AlarmAcknowledgement.waitingAck,
+          acknowledgementTime: '',
+          status: AlarmStatus.waitingAck,
+          details: detail,
+        );
+      } else {
+        updated[index] = existing.copyWith(details: detail);
+      }
+    }
+
+    for (var i = 0; i < updated.length; i++) {
+      final alarm = updated[i];
+      final isLightingDeviceAlarm =
+          alarm.category == 'RCU' && alarm.id.startsWith(roomPrefix);
+      if (!isLightingDeviceAlarm) {
+        continue;
+      }
+      final stillActive = activeIds.contains(alarm.id);
+      if (stillActive || alarm.status == AlarmStatus.fixed) {
+        continue;
+      }
+      updated[i] = alarm.copyWith(
+        status: AlarmStatus.fixed,
+        details: '${alarm.details} Resolved automatically (device alarm off).',
+      );
+    }
+
+    final trimmed = _trimAlarms(updated);
+    state = _applyFiltersTo(
+      trimmed,
+      state.categoryFilter,
+      state.ackFilter,
+      state.statusFilter,
+    );
+  }
+
+  String _lightingRoomPrefix(String roomNumber) {
+    final normalized = roomNumber
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'\s+'), '_');
+    return 'lighting-device-$normalized-';
+  }
+
+  String _lightingAlarmId(String roomNumber, LightingDeviceSummary device) {
+    return '${_lightingRoomPrefix(roomNumber)}${device.type.name}-${device.address}';
   }
 
   @visibleForTesting

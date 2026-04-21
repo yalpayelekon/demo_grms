@@ -71,20 +71,23 @@ class AlarmData {
   }
 
   AlarmData copyWith({
+    String? incidentTime,
     AlarmAcknowledgement? acknowledgement,
     String? acknowledgementTime,
     AlarmStatus? status,
+    String? details,
+    String? ipAddress,
   }) {
     return AlarmData(
       id: id,
       room: room,
-      incidentTime: incidentTime,
+      incidentTime: incidentTime ?? this.incidentTime,
       category: category,
       acknowledgement: acknowledgement ?? this.acknowledgement,
       acknowledgementTime: acknowledgementTime ?? this.acknowledgementTime,
       status: status ?? this.status,
-      details: details,
-      ipAddress: ipAddress,
+      details: details ?? this.details,
+      ipAddress: ipAddress ?? this.ipAddress,
     );
   }
 }
