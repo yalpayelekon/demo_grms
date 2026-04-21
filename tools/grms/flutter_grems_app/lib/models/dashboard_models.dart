@@ -7,6 +7,7 @@ class DashboardStats {
   final int vacantRooms;
   final int housekeepingRooms;
   final int occupancyRate;
+  final int rentedRate;
 
   final List<RoomStatusStat> roomStatusStats;
   final List<HvacStat> hvacStats;
@@ -25,6 +26,7 @@ class DashboardStats {
     required this.vacantRooms,
     required this.housekeepingRooms,
     required this.occupancyRate,
+    required this.rentedRate,
     required this.roomStatusStats,
     required this.hvacStats,
     required this.alarmStats,
@@ -43,6 +45,7 @@ class DashboardStats {
       vacantRooms: 0,
       housekeepingRooms: 0,
       occupancyRate: 0,
+      rentedRate: 0,
       roomStatusStats: [],
       hvacStats: [],
       alarmStats: [],

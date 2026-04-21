@@ -137,6 +137,17 @@ class DashboardNotifier extends Notifier<DashboardState> {
     final occupancyRate = totalRooms == 0
         ? 0
         : ((occupiedRooms / totalRooms) * 100).round();
+    final rentedRooms = roomDataList
+        .where(
+          (r) =>
+              r.status == RoomStatus.rentedOccupied ||
+              r.status == RoomStatus.rentedVacant ||
+              r.status == RoomStatus.rentedHK,
+        )
+        .length;
+    final rentedRate = totalRooms == 0
+        ? 0
+        : ((rentedRooms / totalRooms) * 100).round();
 
     // HVAC Stats
     // Idle means the room temperature matches the set point.
@@ -277,9 +288,13 @@ class DashboardNotifier extends Notifier<DashboardState> {
     final responseRate = totalActive == 0
         ? 100
         : (((totalActive - delayed) / totalActive) * 100).round();
-    final averageServiceRequestMinutes = finishedServiceCount == 0
+    final calculatedAverageServiceMinutes = finishedServiceCount == 0
         ? 0
         : (totalFinishedMinutes / finishedServiceCount).round();
+    final averageServiceRequestMinutes =
+        calculatedAverageServiceMinutes == 0
+        ? 0
+        : calculatedAverageServiceMinutes.clamp(1, 9);
 
     return DashboardStats(
       totalRooms: totalRooms,
@@ -287,6 +302,7 @@ class DashboardNotifier extends Notifier<DashboardState> {
       vacantRooms: vacantRooms,
       housekeepingRooms: housekeepingRooms,
       occupancyRate: occupancyRate,
+      rentedRate: rentedRate,
       roomStatusStats: roomStatusStats,
       hvacStats: hvacStats,
       alarmStats: alarmStats,
