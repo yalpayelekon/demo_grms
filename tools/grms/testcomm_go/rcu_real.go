@@ -1880,7 +1880,7 @@ func buildDaliMastheadQuery(address int) []byte {
 }
 
 func buildDaliLineStatusQuery() []byte {
-	return []byte{rcuHeader, 0x04, 0x00, 0x11}
+	return []byte{rcuHeader, 0x03, 0x00, 0x02, 0x04, 0x00}
 }
 
 func statusForMastheadLog(status string) string {
