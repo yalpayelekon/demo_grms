@@ -698,12 +698,43 @@ func (r *realRcuClient) ExecuteRawCommand(frame []byte, requestID string) map[st
 	if len(frame) == 0 {
 		return nil
 	}
+	// Raw commands with cmdType=0x02 are query frames and return a direct reply.
+	// They must be sent via request/response path; otherwise unread replies can
+	// desynchronize subsequent refresh polling on the shared socket.
+	isQuery := len(frame) >= 4 && frame[3] == 0x02
 	opRes := r.enqueueOperation(opRequest{
 		kind:     opKindScene,
 		priority: opPriorityHigh,
-		timeout:  sceneWriteOnlyTimeout,
+		timeout: func() time.Duration {
+			if isQuery {
+				return timeoutFor(opKindRefreshMisc)
+			}
+			return sceneWriteOnlyTimeout
+		}(),
 		metadata: fmt.Sprintf("raw_hex=% X", frame),
 		exec: func(timeout time.Duration) (map[string]interface{}, error) {
+			if isQuery {
+				reply, err := r.sendRequestLockedWithTimeout(frame, timeout)
+				if err != nil {
+					log.Printf("rcu.raw.query failed room=%s error=%v frame_hex=% X", r.room, err, frame)
+					r.closeConnLocked()
+					return nil, err
+				}
+				log.Printf(
+					"rcu.raw.query sent room=%s frame_hex=% X reply_cmd_type=0x%X reply_cmd=0x%X reply_subcmd=0x%X reply_payload_hex=% X requestId=%s",
+					r.room, frame, reply.CmdType, reply.CmdNo, reply.SubCmdNo, reply.Payload, requestID,
+				)
+				return map[string]interface{}{
+					"triggered":       true,
+					"source":          "live",
+					"status":          "accepted",
+					"frameHex":        fmt.Sprintf("% X", frame),
+					"responseCmdType": reply.CmdType,
+					"responseCmd":     reply.CmdNo,
+					"responseSubCmd":  reply.SubCmdNo,
+					"responseHex":     fmt.Sprintf("% X", reply.Payload),
+				}, nil
+			}
 			if err := r.sendCommandNoResponseLockedWithTimeout(frame, timeout); err != nil {
 				log.Printf("rcu.raw.trigger failed room=%s error=%v frame_hex=% X", r.room, err, frame)
 				r.closeConnLocked()
