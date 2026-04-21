@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:math' as math;
 import '../providers/dashboard_provider.dart';
 import '../providers/hotel_status_provider.dart';
 import '../providers/room_service_provider.dart';
@@ -17,23 +18,6 @@ class DashboardPage extends ConsumerWidget {
     final hotelSync = ref.watch(demoRoomHotelSyncStatusProvider);
     final serviceSync = ref.watch(demoRoomServiceSyncStatusProvider);
     final coordinatesSync = ref.watch(coordinatesSyncProvider);
-    final size = MediaQuery.of(context).size;
-    final isWideDesktop = size.width > 1200;
-    final canUseFixedDesktopGrid = isWideDesktop && size.height > 860;
-    final isTablet = size.width >= 850 && size.width < 1200;
-    final canUseFixedTabletGrid =
-        isTablet && size.width >= 1100 && size.height >= 800;
-    final canUseFixedLandscapeTabletGrid =
-        size.width >= 1200 && size.width < 1360 && size.height >= 820;
-    final useCompactCards = size.height <= 920 || size.width <= 1360;
-    final useUltraCompactCards =
-        isTablet || size.width < 850 || canUseFixedLandscapeTabletGrid;
-    final useTightTabletSpacing =
-        canUseFixedTabletGrid || canUseFixedLandscapeTabletGrid;
-    final canUseFixedGrid =
-        canUseFixedDesktopGrid ||
-        canUseFixedTabletGrid ||
-        canUseFixedLandscapeTabletGrid;
 
     return Scaffold(
       appBar: AppBar(
@@ -53,6 +37,21 @@ class DashboardPage extends ConsumerWidget {
         child: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
+              final contentWidth = constraints.maxWidth;
+              final contentHeight = constraints.maxHeight;
+              final canUseFixedDesktopGrid =
+                  contentWidth >= 1400 && contentHeight >= 760;
+              final canUseFixedTabletGrid =
+                  contentWidth >= 900 && contentHeight >= 620;
+              final useCompactCards =
+                  contentHeight <= 900 || contentWidth <= 1400;
+              final useUltraCompactCards =
+                  contentHeight <= 760 || contentWidth < 1200;
+              final useTightTabletSpacing =
+                  contentHeight <= 760 || contentWidth < 1320;
+              final canUseFixedGrid =
+                  canUseFixedDesktopGrid || canUseFixedTabletGrid;
+
               return Padding(
                 padding: EdgeInsets.all(useTightTabletSpacing ? 18.0 : 24.0),
                 child: canUseFixedGrid
@@ -68,7 +67,6 @@ class DashboardPage extends ConsumerWidget {
                               hotelSync: hotelSync,
                               serviceSync: serviceSync,
                               coordinatesSync: coordinatesSync,
-                              isDesktop: canUseFixedDesktopGrid,
                               pinToViewport: true,
                               useCompactCards: useCompactCards,
                               useUltraCompactCards: useUltraCompactCards,
@@ -93,7 +91,6 @@ class DashboardPage extends ConsumerWidget {
                                 hotelSync: hotelSync,
                                 serviceSync: serviceSync,
                                 coordinatesSync: coordinatesSync,
-                                isDesktop: false,
                                 pinToViewport: false,
                                 useCompactCards: true,
                                 useUltraCompactCards: useUltraCompactCards,
@@ -118,7 +115,6 @@ class DashboardPage extends ConsumerWidget {
     required DemoRoomHotelSyncStatus hotelSync,
     required DemoRoomServiceSyncStatus serviceSync,
     required CoordinatesSyncState coordinatesSync,
-    required bool isDesktop,
     required bool pinToViewport,
     required bool useCompactCards,
     required bool useUltraCompactCards,
@@ -134,77 +130,6 @@ class DashboardPage extends ConsumerWidget {
       _CommunicationItem(label: 'Door Lock', value: 'Online', online: true),
       _CommunicationItem(label: 'PMS', value: 'Online', online: true),
     ];
-
-    if (isDesktop || pinToViewport) {
-      return Column(
-        children: [
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: _CommunicationPanel(
-                    items: communicationItems,
-                    compact: useCompactCards,
-                    ultraCompact: useUltraCompactCards,
-                  ),
-                ),
-                SizedBox(width: useTightTabletSpacing ? 12 : 16),
-                Expanded(
-                  child: _AlarmPanel(
-                    stats: stats.alarmStats,
-                    totalRooms: stats.totalRooms,
-                    compact: useCompactCards,
-                    ultraCompact: useUltraCompactCards,
-                  ),
-                ),
-                SizedBox(width: useTightTabletSpacing ? 12 : 16),
-                Expanded(
-                  child: _HvacPanel(
-                    stats: stats.hvacStats,
-                    totalRooms: stats.totalRooms,
-                    outsideTemp: state.outsideTemp,
-                    compact: useCompactCards,
-                    ultraCompact: useUltraCompactCards,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(height: useTightTabletSpacing ? 12 : 16),
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: _OccupancyPanel(
-                    stats: stats,
-                    compact: useCompactCards,
-                    ultraCompact: useUltraCompactCards,
-                  ),
-                ),
-                SizedBox(width: useTightTabletSpacing ? 12 : 16),
-                Expanded(
-                  child: _ServicePanel(
-                    stats: stats,
-                    compact: useCompactCards,
-                    ultraCompact: useUltraCompactCards,
-                  ),
-                ),
-                SizedBox(width: useTightTabletSpacing ? 12 : 16),
-                Expanded(
-                  child: _EnergyPanel(
-                    isCompact: true,
-                    compact: useCompactCards,
-                    ultraCompact: useUltraCompactCards,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
 
     final cards = <Widget>[
       _CommunicationPanel(
@@ -243,18 +168,30 @@ class DashboardPage extends ConsumerWidget {
     ];
     return LayoutBuilder(
       builder: (context, constraints) {
-        final crossAxisCount = constraints.maxWidth >= 850 ? 2 : 1;
+        final crossAxisCount = pinToViewport ? 3 : (constraints.maxWidth >= 850 ? 2 : 1);
+        final spacing = useTightTabletSpacing ? 12.0 : 16.0;
+        final rowCount = (cards.length / crossAxisCount).ceil();
+        final usableWidth = math.max(
+          1.0,
+          constraints.maxWidth - (spacing * (crossAxisCount - 1)),
+        );
+        final tileWidth = usableWidth / crossAxisCount;
+        final tileHeight = pinToViewport
+            ? math.max(
+                1.0,
+                (constraints.maxHeight - (spacing * (rowCount - 1))) / rowCount,
+              )
+            : tileWidth / (useUltraCompactCards ? 1.18 : 1.28);
+
         return GridView.builder(
           shrinkWrap: !pinToViewport,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: cards.length,
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,
-            mainAxisSpacing: useTightTabletSpacing ? 12 : 16,
-            crossAxisSpacing: useTightTabletSpacing ? 12 : 16,
-            childAspectRatio: pinToViewport
-                ? (useUltraCompactCards ? 1.34 : 1.42)
-                : (useUltraCompactCards ? 1.18 : 1.28),
+            mainAxisSpacing: spacing,
+            crossAxisSpacing: spacing,
+            childAspectRatio: tileWidth / tileHeight,
           ),
           itemBuilder: (context, index) => cards[index],
         );

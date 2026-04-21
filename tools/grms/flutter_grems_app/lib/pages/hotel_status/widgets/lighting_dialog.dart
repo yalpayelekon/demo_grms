@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -430,6 +431,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     String? successMessage,
     String? failurePrefix,
     String? requestId,
+    void Function(Map<String, dynamic> response)? onSuccessResponse,
   }) async {
     final api = ref.read(roomControlApiProvider);
     final effectiveRequestId =
@@ -457,6 +459,9 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
         'LightingDialog: raw command success room=${widget.room.number} '
         'requestId=$effectiveRequestId hex="$hexCommand" message="$successMessage"',
       );
+    }
+    if (result is Success<Map<String, dynamic>>) {
+      onSuccessResponse?.call(result.value);
     }
     // Avoid immediate post-write polling race; schedule a delayed refresh.
     unawaited(
@@ -650,7 +655,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (isAdmin && !isTestUser) ...[
-                  _buildEditPositionsToggle(),
+                  _buildAdminToolsRow(),
                   const SizedBox(height: 10),
                 ],
                 Expanded(
@@ -781,6 +786,24 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     );
   }
 
+  Widget _buildAdminToolsRow() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: _buildEditPositionsToggle()),
+        const SizedBox(width: 10),
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: FilledButton.tonalIcon(
+            onPressed: _showRawHexCommandDialog,
+            icon: const Icon(Icons.terminal, size: 18),
+            label: const Text('Raw Hex'),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildEditPositionsToggle() {
     return SwitchListTile(
       dense: true,
@@ -814,6 +837,163 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
       },
       contentPadding: EdgeInsets.zero,
     );
+  }
+
+  Future<void> _showRawHexCommandDialog() async {
+    final hexController = TextEditingController();
+    String? responseText;
+    String? errorText;
+    bool sending = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> sendCommand() async {
+              final normalizedHex = hexController.text
+                  .trim()
+                  .replaceAll(RegExp(r'\s+'), ' ')
+                  .toUpperCase();
+              if (normalizedHex.isEmpty) {
+                setDialogState(() {
+                  errorText = 'Please enter a hex command.';
+                });
+                return;
+              }
+              setDialogState(() {
+                sending = true;
+                errorText = null;
+              });
+              final requestId = 'raw-manual-${DateTime.now().millisecondsSinceEpoch}';
+              Map<String, dynamic>? backendResponse;
+              final success = await _sendRawCommand(
+                normalizedHex,
+                requestId: requestId,
+                failurePrefix: 'Manual raw command failed',
+                onSuccessResponse: (response) {
+                  backendResponse = response;
+                },
+              );
+              if (!mounted) {
+                return;
+              }
+              if (!success) {
+                setDialogState(() {
+                  sending = false;
+                  responseText = null;
+                  errorText = _errorMessage ?? 'Command failed.';
+                });
+                return;
+              }
+              setDialogState(() {
+                sending = false;
+                if (backendResponse != null) {
+                  responseText = const JsonEncoder.withIndent(
+                    '  ',
+                  ).convert(backendResponse);
+                } else {
+                  responseText = null;
+                  errorText = 'Unexpected response type.';
+                }
+              });
+            }
+
+            return AlertDialog(
+              title: const Text('Send Raw Hex Command'),
+              content: SizedBox(
+                width: 560,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: hexController,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: const InputDecoration(
+                        labelText: 'Hex command',
+                        hintText: '3E 0B00 030403 0110040500070001',
+                      ),
+                      autofocus: true,
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ActionChip(
+                          label: const Text('Q_dali_line_status (0x10)'),
+                          onPressed: () {
+                            hexController.text = '3E 03 00 02 04 10';
+                            hexController.selection = TextSelection.collapsed(
+                              offset: hexController.text.length,
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Room: ${widget.room.number}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    if (errorText != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        errorText!,
+                        style: const TextStyle(color: Colors.redAccent),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    if (responseText != null)
+                      Container(
+                        width: double.infinity,
+                        constraints: const BoxConstraints(maxHeight: 220),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.65),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: SingleChildScrollView(
+                          child: SelectableText(
+                            responseText!,
+                            style: const TextStyle(
+                              fontFamily: 'Courier',
+                              fontSize: 12,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: sending
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Close'),
+                ),
+                FilledButton.icon(
+                  onPressed: sending ? null : sendCommand,
+                  icon: sending
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.send, size: 16),
+                  label: const Text('Send'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    hexController.dispose();
   }
 
   Widget _buildBlindsControlCard() {
