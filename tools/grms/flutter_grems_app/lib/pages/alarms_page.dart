@@ -23,19 +23,27 @@ class _AlarmsPageState extends ConsumerState<AlarmsPage> {
     final paginatedAlarms = filteredAlarms.skip(startIndex).take(_rowsPerPage).toList();
 
     return Scaffold(
-      body: Column(
-        children: [
-          _buildHeader(alarmsState),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Card(
-                clipBehavior: Clip.antiAlias,
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildHeader(alarmsState),
+            const SizedBox(height: 12),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return Container(
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.02),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white.withOpacity(0.1)),
+                    ),
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minWidth: constraints.maxWidth),
                         child: SingleChildScrollView(
                           child: DataTable(
                             columnSpacing: 20,
@@ -49,43 +57,62 @@ class _AlarmsPageState extends ConsumerState<AlarmsPage> {
                               DataColumn(label: Text('Status')),
                               DataColumn(label: Text('Details')),
                             ],
-                            rows: paginatedAlarms.map((alarm) => _buildRow(alarm)).toList(),
+                            rows: paginatedAlarms
+                                .map((alarm) => _buildRow(alarm))
+                                .toList(),
                           ),
                         ),
                       ),
                     ),
-                    _buildFooter(filteredAlarms.length, totalPages),
-                  ],
-                ),
+                  );
+                },
               ),
             ),
-          ),
-        ],
+            _buildFooter(filteredAlarms.length, totalPages),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildHeader(AlarmsState state) {
     final notifier = ref.read(alarmsProvider.notifier);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor.withOpacity(0.5),
-        border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.1))),
-      ),
-      child: Center(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-          _buildFilterGroup('Category', state.categoryFilter, (v) => notifier.setFilters(category: v), ['All', 'Long Inact.', 'Open Door', 'PMS', 'RCU', 'Lighting', 'HVAC', 'HK']),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final filters = [
+          _buildFilterGroup(
+            'Category',
+            state.categoryFilter,
+            (v) => notifier.setFilters(category: v),
+            ['All', 'Long Inact.', 'Open Door', 'PMS', 'RCU', 'Lighting', 'HVAC', 'HK'],
+          ),
           const SizedBox(width: 16),
-          _buildFilterGroup('Acknowledgement', state.ackFilter, (v) => notifier.setFilters(ack: v), ['All', 'Waiting Ack', 'Acknowledged']),
+          _buildFilterGroup(
+            'Acknowledgement',
+            state.ackFilter,
+            (v) => notifier.setFilters(ack: v),
+            ['All', 'Waiting Ack', 'Acknowledged'],
+          ),
           const SizedBox(width: 16),
-          _buildFilterGroup('Status', state.statusFilter, (v) => notifier.setFilters(status: v), ['All', 'Waiting Ack', 'Acknowledged', 'Waiting Repair/Cancel', 'Fixed']),
-          ],
-        ),
-      ),
+          _buildFilterGroup(
+            'Status',
+            state.statusFilter,
+            (v) => notifier.setFilters(status: v),
+            ['All', 'Waiting Ack', 'Acknowledged', 'Waiting Repair/Cancel', 'Fixed'],
+          ),
+        ];
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: constraints.maxWidth < 1100
+              ? SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(children: filters),
+                )
+              : Row(children: filters),
+        );
+      },
     );
   }
 

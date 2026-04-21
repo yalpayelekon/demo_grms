@@ -112,6 +112,10 @@ class _FloorPlanPageState extends ConsumerState<FloorPlanPage> {
                           child: Image.asset(
                             'assets/images/floor_with_rooms.png',
                             fit: BoxFit.contain,
+                            filterQuality: FilterQuality.high,
+                            isAntiAlias: true,
+                            cacheWidth: 3072,
+                            cacheHeight: 2120,
                           ),
                         ),
                         Positioned(

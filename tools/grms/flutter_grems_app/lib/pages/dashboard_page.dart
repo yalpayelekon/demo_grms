@@ -374,7 +374,7 @@ class _AlarmPanel extends StatelessWidget {
               crossAxisCount: 2,
               mainAxisSpacing: compact ? 6 : 8,
               crossAxisSpacing: compact ? 6 : 8,
-              childAspectRatio: compact ? 3.3 : 3.6,
+              childAspectRatio: compact ? 2.6 : 2.8,
               children: sortedStats.map((stat) {
                 return _AlarmCategoryCard(
                   label: stat.label,
@@ -408,6 +408,7 @@ class _AlarmCategoryCard extends StatelessWidget {
   final int? totalRooms;
   final IconData icon;
   final bool compact;
+  final bool tightHeight;
 
   const _AlarmCategoryCard({
     required this.label,
@@ -415,6 +416,7 @@ class _AlarmCategoryCard extends StatelessWidget {
     this.totalRooms,
     required this.icon,
     this.compact = false,
+    this.tightHeight = false,
   });
 
   @override
@@ -422,46 +424,42 @@ class _AlarmCategoryCard extends StatelessWidget {
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 7 : 8,
-        vertical: compact ? 5 : 6,
+        vertical: tightHeight ? (compact ? 3 : 4) : (compact ? 5 : 6),
       ),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.04),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.white.withOpacity(0.12)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Icon(icon, size: compact ? 18 : 20, color: Colors.white70),
-              SizedBox(width: compact ? 4 : 5),
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: compact ? 9 : 10,
+          Expanded(
+            child: Row(
+              children: [
+                Icon(icon, size: compact ? 25 : 28, color: Colors.white70),
+                SizedBox(width: compact ? 4 : 5),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: compact ? 9 : 10,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-          SizedBox(height: compact ? 2 : 3),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.start,
-            children: [
-              Text(
-                totalRooms == null ? count.toString() : '$count / $totalRooms',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: compact ? 13 : 14,
-                ),
-              ),
-            ],
+          SizedBox(width: compact ? 6 : 8),
+          Text(
+            totalRooms == null ? count.toString() : '$count / $totalRooms',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: compact ? 12 : 13,
+            ),
           ),
         ],
       ),
@@ -508,9 +506,9 @@ class _OccupancyPanel extends StatelessWidget {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             crossAxisCount: 2,
-            mainAxisSpacing: compact ? 6 : 8,
+            mainAxisSpacing: compact ? 4 : 6,
             crossAxisSpacing: compact ? 6 : 8,
-            childAspectRatio: compact ? 3.3 : 3.6,
+            childAspectRatio: compact ? 3.0 : 3.2,
             children: stats.roomStatusStats.asMap().entries.map((entry) {
               final statusStat = entry.value;
               return _AlarmCategoryCard(
@@ -519,6 +517,7 @@ class _OccupancyPanel extends StatelessWidget {
                 totalRooms: stats.totalRooms,
                 icon: _occupancyIconForLabel(statusStat.label),
                 compact: compact,
+                tightHeight: true,
               );
             }).toList(),
           ),
@@ -599,27 +598,82 @@ class _ServicePanel extends StatelessWidget {
             ],
           ),
           SizedBox(height: compact ? 12 : 16),
-          _ResponseGauge(rate: stats.responseRate, compact: compact),
-          SizedBox(height: compact ? 10 : 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 2,
+            mainAxisSpacing: compact ? 4 : 6,
+            crossAxisSpacing: compact ? 10 : 12,
+            childAspectRatio: compact ? 2.2 : 2.4,
             children: [
-              Text(
-                'Avg Response Time',
-                style: TextStyle(
-                  color: Colors.white60,
-                  fontSize: compact ? 11 : 12,
-                ),
-              ),
-              Text(
-                '${stats.averageServiceRequestMinutes} min',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: compact ? 12 : 13,
-                ),
+              _InlineServiceMetric(
+                label: 'Avg Response Time',
+                value: '${stats.averageServiceRequestMinutes} min',
+                icon: Icons.timer_outlined,
+                compact: compact,
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InlineServiceMetric extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final bool compact;
+
+  const _InlineServiceMetric({
+    required this.label,
+    required this.value,
+    required this.icon,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 6 : 8,
+        vertical: compact ? 4 : 6,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                Icon(icon, size: compact ? 29 : 31, color: Colors.white70),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white60,
+                      fontSize: compact ? 10 : 11,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(width: compact ? 6 : 8),
+          Text(
+            value,
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: compact ? 11 : 12,
+            ),
           ),
         ],
       ),
@@ -672,7 +726,7 @@ class _HvacPanel extends StatelessWidget {
         crossAxisCount: 2,
         mainAxisSpacing: compact ? 8 : 12,
         crossAxisSpacing: compact ? 8 : 12,
-        childAspectRatio: compact ? 2.4 : 2.8,
+        childAspectRatio: compact ? 1.8 : 2.1,
         children: stats.take(4).map((stat) {
           return Container(
             decoration: BoxDecoration(
@@ -688,7 +742,7 @@ class _HvacPanel extends StatelessWidget {
                   children: [
                     Icon(
                       _hvacIconForLabel(stat.label),
-                      size: compact ? 24 : 26,
+                      size: compact ? 34 : 36,
                       color: Colors.white70,
                     ),
                     SizedBox(width: compact ? 4 : 6),
@@ -826,7 +880,7 @@ class _CommunicationPanel extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Icon(Icons.circle, size: 18, color: color),
+                Icon(Icons.circle, size: 25, color: color),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
@@ -884,20 +938,26 @@ class _CountBox extends StatelessWidget {
         color: Colors.white.withOpacity(0.03),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Column(
+      child: Row(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: compact ? 22 : 24, color: Colors.white70),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
-              ),
-            ],
+          const SizedBox(width: 10),
+          Expanded(
+            child: Row(
+              children: [
+                Icon(icon, size: compact ? 31 : 34, color: Colors.white70),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
           ),
-          SizedBox(height: compact ? 2 : 4),
+          const SizedBox(width: 8),
           Text(
             value,
             style: TextStyle(
@@ -906,6 +966,7 @@ class _CountBox extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
           ),
+          const SizedBox(width: 10),
         ],
       ),
     );
@@ -926,84 +987,47 @@ class _SmallStat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: compact ? 21 : 22, color: Colors.white70),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: Colors.white60,
-                fontSize: compact ? 10 : 11,
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: compact ? 1 : 2),
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ResponseGauge extends StatelessWidget {
-  final int rate;
-  final bool compact;
-  const _ResponseGauge({required this.rate, this.compact = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 10,
+        vertical: compact ? 8 : 10,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Row(
               children: [
-                Icon(
-                  Icons.speed_outlined,
-                  size: compact ? 22 : 24,
-                  color: Colors.white70,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'Request Rate',
-                  style: TextStyle(
-                    color: Colors.white60,
-                    fontSize: compact ? 11 : 12,
+                Icon(icon, size: compact ? 29 : 31, color: Colors.white70),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white60,
+                      fontSize: compact ? 10 : 11,
+                    ),
                   ),
                 ),
               ],
             ),
-            Text(
-              '$rate%',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: compact ? 6 : 8),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: rate / 100,
-            backgroundColor: Colors.white10,
-            color: Colors.white70,
-            minHeight: compact ? 6 : 8,
           ),
-        ),
-      ],
+          const SizedBox(width: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
