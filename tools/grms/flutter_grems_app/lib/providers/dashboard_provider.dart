@@ -80,6 +80,43 @@ class DashboardNotifier extends Notifier<DashboardState> {
     }).toList();
 
     // Occupancy Stats
+    final roomStatusStats = <RoomStatusStat>[
+      RoomStatusStat(
+        label: RoomStatus.rentedOccupied.label,
+        rooms: roomDataList
+            .where((r) => r.status == RoomStatus.rentedOccupied)
+            .length,
+      ),
+      RoomStatusStat(
+        label: RoomStatus.rentedHK.label,
+        rooms: roomDataList.where((r) => r.status == RoomStatus.rentedHK).length,
+      ),
+      RoomStatusStat(
+        label: RoomStatus.rentedVacant.label,
+        rooms: roomDataList
+            .where((r) => r.status == RoomStatus.rentedVacant)
+            .length,
+      ),
+      RoomStatusStat(
+        label: RoomStatus.unrentedHK.label,
+        rooms: roomDataList
+            .where((r) => r.status == RoomStatus.unrentedHK)
+            .length,
+      ),
+      RoomStatusStat(
+        label: RoomStatus.unrentedVacant.label,
+        rooms: roomDataList
+            .where((r) => r.status == RoomStatus.unrentedVacant)
+            .length,
+      ),
+      RoomStatusStat(
+        label: RoomStatus.malfunction.label,
+        rooms: roomDataList
+            .where((r) => r.status == RoomStatus.malfunction)
+            .length,
+      ),
+    ];
+
     final occupiedRooms = roomDataList
         .where((r) => r.status == RoomStatus.rentedOccupied)
         .length;
@@ -177,12 +214,26 @@ class DashboardNotifier extends Notifier<DashboardState> {
       alarmCounts[category] = (alarmCounts[category] ?? 0) + 1;
     }
 
-    final alarmStats = alarmCounts.entries
+    const defaultAlarmCategories = [
+      'Door Sys',
+      'Long Inact.',
+      'HVAC',
+      'PMS',
+      'Lighting',
+      'RCU',
+    ];
+    final dynamicCategories = alarmCounts.keys
+        .where((category) => !defaultAlarmCategories.contains(category))
+        .toList()
+      ..sort();
+    final orderedCategories = [...defaultAlarmCategories, ...dynamicCategories];
+
+    final alarmStats = orderedCategories
         .map(
-          (e) => AlarmStat(
-            label: e.key,
-            count: e.value,
-            badgeClass: _getBadgeClass(e.key),
+          (category) => AlarmStat(
+            label: category,
+            count: alarmCounts[category] ?? 0,
+            badgeClass: _getBadgeClass(category),
           ),
         )
         .toList();
@@ -193,6 +244,8 @@ class DashboardNotifier extends Notifier<DashboardState> {
     int delayed = 0;
     int inProgress = 0;
     int totalActive = 0;
+    int totalFinishedMinutes = 0;
+    int finishedServiceCount = 0;
 
     for (var s in services) {
       if (s.serviceType != ServiceType.laundry &&
@@ -210,9 +263,23 @@ class DashboardNotifier extends Notifier<DashboardState> {
       if (s.serviceState == 'Started') inProgress++;
     }
 
+    for (var s in services) {
+      if (s.serviceType != ServiceType.laundry &&
+          s.serviceType != ServiceType.mur) {
+        continue;
+      }
+      if (s.finishedMinutes != null && s.finishedMinutes! > 0) {
+        totalFinishedMinutes += s.finishedMinutes!;
+        finishedServiceCount++;
+      }
+    }
+
     final responseRate = totalActive == 0
         ? 100
         : (((totalActive - delayed) / totalActive) * 100).round();
+    final averageServiceRequestMinutes = finishedServiceCount == 0
+        ? 0
+        : (totalFinishedMinutes / finishedServiceCount).round();
 
     return DashboardStats(
       totalRooms: totalRooms,
@@ -220,6 +287,7 @@ class DashboardNotifier extends Notifier<DashboardState> {
       vacantRooms: vacantRooms,
       housekeepingRooms: housekeepingRooms,
       occupancyRate: occupancyRate,
+      roomStatusStats: roomStatusStats,
       hvacStats: hvacStats,
       alarmStats: alarmStats,
       lndCount: lnd,
@@ -227,6 +295,7 @@ class DashboardNotifier extends Notifier<DashboardState> {
       delayedCount: delayed,
       inProgressCount: inProgress,
       responseRate: responseRate,
+      averageServiceRequestMinutes: averageServiceRequestMinutes,
     );
   }
 

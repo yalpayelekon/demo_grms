@@ -7,15 +7,17 @@ class DashboardStats {
   final int vacantRooms;
   final int housekeepingRooms;
   final int occupancyRate;
-  
+
+  final List<RoomStatusStat> roomStatusStats;
   final List<HvacStat> hvacStats;
   final List<AlarmStat> alarmStats;
-  
+
   final int lndCount;
   final int murCount;
   final int delayedCount;
   final int inProgressCount;
   final int responseRate;
+  final int averageServiceRequestMinutes;
 
   const DashboardStats({
     required this.totalRooms,
@@ -23,6 +25,7 @@ class DashboardStats {
     required this.vacantRooms,
     required this.housekeepingRooms,
     required this.occupancyRate,
+    required this.roomStatusStats,
     required this.hvacStats,
     required this.alarmStats,
     required this.lndCount,
@@ -30,6 +33,7 @@ class DashboardStats {
     required this.delayedCount,
     required this.inProgressCount,
     required this.responseRate,
+    required this.averageServiceRequestMinutes,
   });
 
   factory DashboardStats.empty() {
@@ -39,6 +43,7 @@ class DashboardStats {
       vacantRooms: 0,
       housekeepingRooms: 0,
       occupancyRate: 0,
+      roomStatusStats: [],
       hvacStats: [],
       alarmStats: [],
       lndCount: 0,
@@ -46,8 +51,17 @@ class DashboardStats {
       delayedCount: 0,
       inProgressCount: 0,
       responseRate: 100,
+      averageServiceRequestMinutes: 0,
     );
   }
+}
+
+@immutable
+class RoomStatusStat {
+  final String label;
+  final int rooms;
+
+  const RoomStatusStat({required this.label, required this.rooms});
 }
 
 @immutable

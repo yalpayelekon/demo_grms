@@ -47,10 +47,7 @@ class DashboardPage extends ConsumerWidget {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: const [
-              Color(0xFF1E2330),
-              Color(0xFF171B26),
-            ],
+            colors: const [Color(0xFF1E2330), Color(0xFF171B26)],
           ),
         ),
         child: SafeArea(
@@ -130,24 +127,12 @@ class DashboardPage extends ConsumerWidget {
     final communicationItems = <_CommunicationItem>[
       _CommunicationItem(
         label: 'RCU Link',
-        value: 'Online',
+        value: '363 / ${stats.totalRooms}',
         online: true,
       ),
-      _CommunicationItem(
-        label: 'Service Bus',
-        value: 'Online',
-        online: true,
-      ),
-      _CommunicationItem(
-        label: 'Coordinates',
-        value: 'Online',
-        online: true,
-      ),
-      _CommunicationItem(
-        label: 'PMS',
-        value: 'Online',
-        online: true,
-      ),
+      _CommunicationItem(label: 'BMS', value: 'Online', online: true),
+      _CommunicationItem(label: 'Door Lock', value: 'Online', online: true),
+      _CommunicationItem(label: 'PMS', value: 'Online', online: true),
     ];
 
     if (isDesktop || pinToViewport) {
@@ -168,6 +153,7 @@ class DashboardPage extends ConsumerWidget {
                 Expanded(
                   child: _AlarmPanel(
                     stats: stats.alarmStats,
+                    totalRooms: stats.totalRooms,
                     compact: useCompactCards,
                     ultraCompact: useUltraCompactCards,
                   ),
@@ -228,6 +214,7 @@ class DashboardPage extends ConsumerWidget {
       ),
       _AlarmPanel(
         stats: stats.alarmStats,
+        totalRooms: stats.totalRooms,
         compact: useCompactCards,
         ultraCompact: useUltraCompactCards,
       ),
@@ -349,60 +336,66 @@ class _GlassCard extends StatelessWidget {
 
 class _AlarmPanel extends StatelessWidget {
   final List<AlarmStat> stats;
+  final int totalRooms;
   final bool compact;
   final bool ultraCompact;
   const _AlarmPanel({
     required this.stats,
+    required this.totalRooms,
     this.compact = false,
     this.ultraCompact = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final sortedStats = [...stats]..sort((a, b) => b.count.compareTo(a.count));
+
     return _GlassCard(
       title: 'Alarm Status',
-      subtitle: 'Last 24h snapshot',
       compact: compact,
       ultraCompact: ultraCompact,
       child: Column(
-        children: stats.map((stat) => Padding(
-          padding: EdgeInsets.only(bottom: compact ? 9.0 : 12.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  stat.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: compact ? 14 : 16,
-                  ),
+        children: [
+          if (sortedStats.isEmpty)
+            Padding(
+              padding: EdgeInsets.only(top: compact ? 4 : 6),
+              child: Text(
+                'Aktif alarm yok',
+                style: TextStyle(
+                  color: Colors.white54,
+                  fontSize: compact ? 12 : 13,
                 ),
               ),
-              const SizedBox(width: 12),
-              Container(
-                padding: EdgeInsets.symmetric(
-                  horizontal: compact ? 9 : 10,
-                  vertical: compact ? 3 : 4,
-                ),
-                decoration: BoxDecoration(
-                  color: _getBadgeColor(stat.badgeClass).withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: _getBadgeColor(stat.badgeClass).withOpacity(0.5)),
-                ),
-                child: Text(
-                  stat.count.toString(),
-                  style: TextStyle(
-                    color: _getBadgeColor(stat.badgeClass),
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        )).toList(),
+            )
+          else
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final width = constraints.maxWidth;
+                final crossAxisCount = width >= 760 ? 3 : 2;
+                final spacing = compact ? 6.0 : 8.0;
+                final baseCardWidth =
+                    (width - (spacing * (crossAxisCount - 1))) / crossAxisCount;
+                final cardWidth = baseCardWidth * 0.65;
+
+                return Wrap(
+                  spacing: spacing,
+                  runSpacing: spacing,
+                  children: sortedStats.map((stat) {
+                    return SizedBox(
+                      width: cardWidth,
+                      child: _AlarmCategoryCard(
+                        label: stat.label,
+                        count: stat.count,
+                        totalRooms: totalRooms,
+                        color: _getBadgeColor(stat.badgeClass),
+                        compact: compact,
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+        ],
       ),
     );
   }
@@ -411,6 +404,62 @@ class _AlarmPanel extends StatelessWidget {
     if (badgeClass == 'badge-danger') return Colors.redAccent;
     if (badgeClass == 'badge-success') return Colors.greenAccent;
     return Colors.orangeAccent;
+  }
+}
+
+class _AlarmCategoryCard extends StatelessWidget {
+  final String label;
+  final int count;
+  final int? totalRooms;
+  final Color color;
+  final bool compact;
+
+  const _AlarmCategoryCard({
+    required this.label,
+    required this.count,
+    this.totalRooms,
+    required this.color,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 7 : 8,
+        vertical: compact ? 5 : 6,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: Colors.white70, fontSize: compact ? 9 : 10),
+          ),
+          SizedBox(height: compact ? 2 : 3),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: [
+              Text(
+                totalRooms == null ? count.toString() : '$count / $totalRooms',
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.bold,
+                  fontSize: compact ? 13 : 14,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -441,31 +490,48 @@ class _OccupancyPanel extends StatelessWidget {
               color: Colors.blueAccent,
             ),
           ),
-          const Text('Total', style: TextStyle(color: Colors.white60, fontSize: 12)),
+          const Text(
+            'Total',
+            style: TextStyle(color: Colors.white60, fontSize: 12),
+          ),
         ],
       ),
       child: Column(
         children: [
-          _StatRow(
-            label: 'Occupied',
-            value: '${stats.occupiedRooms} / ${stats.totalRooms}',
-            color: Colors.blueAccent,
-          ),
-          const Divider(color: Colors.white10, height: 24),
-          _StatRow(
-            label: 'Vacant',
-            value: '${stats.vacantRooms} / ${stats.totalRooms}',
-            color: Colors.white70,
-          ),
-          const Divider(color: Colors.white10, height: 24),
-          _StatRow(
-            label: 'Housekeeping',
-            value: '${stats.housekeepingRooms} / ${stats.totalRooms}',
-            color: Colors.orangeAccent,
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 2,
+            mainAxisSpacing: compact ? 6 : 8,
+            crossAxisSpacing: compact ? 6 : 8,
+            childAspectRatio: compact ? 3.3 : 3.6,
+            children: stats.roomStatusStats.asMap().entries.map((entry) {
+              final index = entry.key;
+              final statusStat = entry.value;
+              return _AlarmCategoryCard(
+                label: statusStat.label,
+                count: statusStat.rooms,
+                totalRooms: stats.totalRooms,
+                color: _statusColor(index),
+                compact: compact,
+              );
+            }).toList(),
           ),
         ],
       ),
     );
+  }
+
+  Color _statusColor(int index) {
+    const palette = [
+      Colors.lightBlueAccent,
+      Colors.orangeAccent,
+      Colors.greenAccent,
+      Colors.amberAccent,
+      Colors.white70,
+      Colors.redAccent,
+    ];
+    return palette[index % palette.length];
   }
 }
 
@@ -530,6 +596,27 @@ class _ServicePanel extends StatelessWidget {
           ),
           SizedBox(height: compact ? 12 : 16),
           _ResponseGauge(rate: stats.responseRate, compact: compact),
+          SizedBox(height: compact ? 10 : 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Avg Request Time',
+                style: TextStyle(
+                  color: Colors.white60,
+                  fontSize: compact ? 11 : 12,
+                ),
+              ),
+              Text(
+                '${stats.averageServiceRequestMinutes} min',
+                style: TextStyle(
+                  color: Colors.orangeAccent,
+                  fontWeight: FontWeight.bold,
+                  fontSize: compact ? 12 : 13,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -556,20 +643,25 @@ class _HvacPanel extends StatelessWidget {
       title: 'HVAC Status',
       compact: compact,
       ultraCompact: ultraCompact,
-      trailing: outsideTemp != null ? Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text(
-            '${outsideTemp!.round()}°C',
-            style: TextStyle(
-              fontSize: compact ? 21 : 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          const Text('Outside', style: TextStyle(color: Colors.white60, fontSize: 12)),
-        ],
-      ) : null,
+      trailing: outsideTemp != null
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '${outsideTemp!.round()}°C',
+                  style: TextStyle(
+                    fontSize: compact ? 21 : 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const Text(
+                  'Outside',
+                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                ),
+              ],
+            )
+          : null,
       child: GridView.count(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
@@ -588,11 +680,11 @@ class _HvacPanel extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  '${stat.rooms}',
+                  '${stat.rooms} / $totalRooms',
                   style: TextStyle(
                     color: _getHvacColors(stat.label).first,
                     fontWeight: FontWeight.bold,
-                    fontSize: compact ? 23 : 26,
+                    fontSize: compact ? 20 : 22,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -602,10 +694,6 @@ class _HvacPanel extends StatelessWidget {
                     color: Colors.white70,
                     fontSize: compact ? 10 : 11,
                   ),
-                ),
-                Text(
-                  '/$totalRooms',
-                  style: const TextStyle(color: Colors.white38, fontSize: 10),
                 ),
               ],
             ),
@@ -668,10 +756,7 @@ class _EnergyPanel extends StatelessWidget {
             ],
           ),
           SizedBox(height: compact ? 8 : 12),
-          SizedBox(
-            height: chartHeight,
-            child: const EnergySavingsChart(),
-          ),
+          SizedBox(height: chartHeight, child: const EnergySavingsChart()),
         ],
       ),
     );
@@ -764,24 +849,6 @@ class _CommunicationPanel extends StatelessWidget {
   }
 }
 
-class _StatRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-  const _StatRow({required this.label, required this.value, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: const TextStyle(color: Colors.white70)),
-        Text(value, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 18)),
-      ],
-    );
-  }
-}
-
 class _CountBox extends StatelessWidget {
   final String label;
   final String value;
@@ -802,7 +869,10 @@ class _CountBox extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Text(label, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white54, fontSize: 12),
+          ),
           SizedBox(height: compact ? 2 : 4),
           Text(
             value,
@@ -839,7 +909,10 @@ class _SmallStat extends StatelessWidget {
           style: TextStyle(color: Colors.white60, fontSize: compact ? 10 : 11),
         ),
         SizedBox(height: compact ? 1 : 2),
-        Text(value, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+        Text(
+          value,
+          style: TextStyle(color: color, fontWeight: FontWeight.bold),
+        ),
       ],
     );
   }
@@ -864,7 +937,13 @@ class _ResponseGauge extends StatelessWidget {
                 fontSize: compact ? 11 : 12,
               ),
             ),
-            Text('$rate%', style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
+            Text(
+              '$rate%',
+              style: const TextStyle(
+                color: Colors.greenAccent,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ],
         ),
         SizedBox(height: compact ? 6 : 8),
