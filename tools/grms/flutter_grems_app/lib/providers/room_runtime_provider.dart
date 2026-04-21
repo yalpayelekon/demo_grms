@@ -580,6 +580,9 @@ bool _computeEffectiveRoomAlarm(
   if (snapshot.hasDoorAlarm) {
     return true;
   }
+  if (snapshot.hasDaliLineShortCircuit) {
+    return true;
+  }
   if (_hasVisibleConfiguredLightingAlarm(snapshot, configs)) {
     return true;
   }

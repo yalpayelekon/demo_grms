@@ -181,9 +181,17 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
           configs: ref.read(lightingDevicesProvider.notifier).configs,
           live: next.lighting,
         );
+        final runtimeSnapshot = ref.read(
+          roomRuntimeRoomDataProvider(widget.room.number),
+        );
         ref
             .read(alarmsProvider.notifier)
-            .syncLightingDeviceAlarmsForRoom(widget.room.number, mergedDevices);
+            .syncLightingDeviceAlarmsForRoom(
+              widget.room.number,
+              mergedDevices,
+              hasDaliLineShortCircuit:
+                  runtimeSnapshot?.hasDaliLineShortCircuit ?? false,
+            );
         if (!mounted) {
           return;
         }
@@ -219,9 +227,17 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
         configs: ref.read(lightingDevicesProvider.notifier).configs,
         live: currentLighting.lighting,
       );
+      final runtimeSnapshot = ref.read(
+        roomRuntimeRoomDataProvider(widget.room.number),
+      );
       ref
           .read(alarmsProvider.notifier)
-          .syncLightingDeviceAlarmsForRoom(widget.room.number, mergedDevices);
+          .syncLightingDeviceAlarmsForRoom(
+            widget.room.number,
+            mergedDevices,
+            hasDaliLineShortCircuit:
+                runtimeSnapshot?.hasDaliLineShortCircuit ?? false,
+          );
     }
   }
 
@@ -469,7 +485,9 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
         if (!mounted) {
           return;
         }
-        await ref.read(roomSnapshotProvider(widget.room.number).notifier).refreshNow();
+        await ref
+            .read(roomSnapshotProvider(widget.room.number).notifier)
+            .refreshNow();
       }),
     );
     return true;
@@ -763,7 +781,10 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
                                   Expanded(child: _buildHvacCard(room)),
                                   const SizedBox(width: 10),
                                   Expanded(
-                                    child: _buildServiceCard(room, serviceEntries),
+                                    child: _buildServiceCard(
+                                      room,
+                                      serviceEntries,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -817,10 +838,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
         _isEditMode
             ? 'Drag pins or use arrow keys for fine movement.'
             : 'Move lighting pins.',
-        style: TextStyle(
-          color: Colors.white.withOpacity(0.65),
-          fontSize: 11,
-        ),
+        style: TextStyle(color: Colors.white.withOpacity(0.65), fontSize: 11),
       ),
       onChanged: (value) {
         setState(() {
@@ -865,7 +883,8 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
                 sending = true;
                 errorText = null;
               });
-              final requestId = 'raw-manual-${DateTime.now().millisecondsSinceEpoch}';
+              final requestId =
+                  'raw-manual-${DateTime.now().millisecondsSinceEpoch}';
               Map<String, dynamic>? backendResponse;
               final success = await _sendRawCommand(
                 normalizedHex,
@@ -1097,11 +1116,13 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     if (!mounted || !ok) {
       return;
     }
-    ref.read(roomServiceProvider.notifier).applyServiceAction(
-      roomNumber: roomNumber,
-      serviceType: serviceType,
-      serviceState: serviceState,
-    );
+    ref
+        .read(roomServiceProvider.notifier)
+        .applyServiceAction(
+          roomNumber: roomNumber,
+          serviceType: serviceType,
+          serviceState: serviceState,
+        );
   }
 
   Widget _buildHvacCard(RoomData room) {

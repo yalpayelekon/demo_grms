@@ -131,7 +131,9 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
       _seedAlarm(
         room: _pickRoomOrFallback(5, fallback: 'Room 5106'),
         category: 'HVAC',
-        incidentAt: now.subtract(const Duration(days: 2, hours: 1, minutes: 12)),
+        incidentAt: now.subtract(
+          const Duration(days: 2, hours: 1, minutes: 12),
+        ),
         acknowledgement: AlarmAcknowledgement.acknowledged,
         acknowledgementAt: now.subtract(const Duration(days: 2, hours: 1)),
         status: AlarmStatus.fixed,
@@ -142,7 +144,9 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
         category: 'Open Door',
         incidentAt: now.subtract(const Duration(days: 3, hours: 4)),
         acknowledgement: AlarmAcknowledgement.acknowledged,
-        acknowledgementAt: now.subtract(const Duration(days: 3, hours: 3, minutes: 45)),
+        acknowledgementAt: now.subtract(
+          const Duration(days: 3, hours: 3, minutes: 45),
+        ),
         status: AlarmStatus.waitingRepair,
         details: 'Door sensor repeatedly reports open state.',
       ),
@@ -177,11 +181,12 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
 
   List<String> _roomPool() {
     final zonesState = ref.read(zonesProvider);
-    final rooms = zonesState.zonesData.categoryNamesBlockFloorMap.values
-        .expand((floors) => floors.values.expand((roomList) => roomList))
-        .toSet()
-        .toList()
-      ..sort();
+    final rooms =
+        zonesState.zonesData.categoryNamesBlockFloorMap.values
+            .expand((floors) => floors.values.expand((roomList) => roomList))
+            .toSet()
+            .toList()
+          ..sort();
     return rooms;
   }
 
@@ -251,7 +256,9 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
     }
     final mutable = List<AlarmData>.from(alarms);
     while (mutable.length > _maxAlarmEntries) {
-      final fixedIndex = mutable.lastIndexWhere((alarm) => alarm.status == AlarmStatus.fixed);
+      final fixedIndex = mutable.lastIndexWhere(
+        (alarm) => alarm.status == AlarmStatus.fixed,
+      );
       if (fixedIndex >= 0) {
         mutable.removeAt(fixedIndex);
       } else {
@@ -295,7 +302,9 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
       state.statusFilter,
     );
     if (kDebugMode) {
-      final fixedCount = progressed.where((a) => a.status == AlarmStatus.fixed).length;
+      final fixedCount = progressed
+          .where((a) => a.status == AlarmStatus.fixed)
+          .length;
       debugPrint(
         'AlarmsNotifier: progression tick applied total=${progressed.length} fixed=$fixedCount',
       );
@@ -311,7 +320,12 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
     );
   }
 
-  AlarmsState _applyFiltersTo(List<AlarmData> all, String cat, String ack, String stat) {
+  AlarmsState _applyFiltersTo(
+    List<AlarmData> all,
+    String cat,
+    String ack,
+    String stat,
+  ) {
     final filtered = all.where((alarm) {
       final matchesCategory = cat == 'All' || alarm.category == cat;
       final matchesAck = ack == 'All' || alarm.acknowledgement.label == ack;
@@ -344,7 +358,8 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
         status: isNowAck ? AlarmStatus.waitingRepair : alarm.status,
       );
 
-      final updatedAll = List<AlarmData>.from(state.allAlarms)..[index] = updatedAlarm;
+      final updatedAll = List<AlarmData>.from(state.allAlarms)
+        ..[index] = updatedAlarm;
       state = _applyFiltersTo(
         updatedAll,
         state.categoryFilter,
@@ -363,7 +378,8 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
             ? AlarmStatus.fixed
             : AlarmStatus.waitingRepair;
         final updatedAlarm = alarm.copyWith(status: newStatus);
-        final updatedAll = List<AlarmData>.from(state.allAlarms)..[index] = updatedAlarm;
+        final updatedAll = List<AlarmData>.from(state.allAlarms)
+          ..[index] = updatedAlarm;
         state = _applyFiltersTo(
           updatedAll,
           state.categoryFilter,
@@ -376,8 +392,9 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
 
   void syncLightingDeviceAlarmsForRoom(
     String roomNumber,
-    List<LightingDeviceSummary> devices,
-  ) {
+    List<LightingDeviceSummary> devices, {
+    bool hasDaliLineShortCircuit = false,
+  }) {
     final normalizedRoom = roomNumber.trim();
     if (normalizedRoom.isEmpty) {
       return;
@@ -386,19 +403,53 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
         ? normalizedRoom
         : 'Room $normalizedRoom';
     final roomPrefix = _lightingRoomPrefix(normalizedRoom);
+    final lineAlarmId = _lightingLineAlarmId(normalizedRoom);
     final now = DateTime.now();
 
     final activeDevices = devices.where((d) => d.alarm).toList(growable: false);
     final activeIds = <String>{};
     final updated = List<AlarmData>.from(state.allAlarms);
 
+    if (hasDaliLineShortCircuit) {
+      activeIds.add(lineAlarmId);
+      final detail =
+          'RCU alarm source: DALI line short circuit detected. '
+          'Scope: line-level RCU fault, not a device-level pendent alarm.';
+      final index = updated.indexWhere((alarm) => alarm.id == lineAlarmId);
+      if (index < 0) {
+        updated.insert(
+          0,
+          AlarmData(
+            id: lineAlarmId,
+            room: roomLabel,
+            incidentTime: _formatIncidentTime(now),
+            category: 'RCU',
+            acknowledgement: AlarmAcknowledgement.waitingAck,
+            acknowledgementTime: '',
+            status: AlarmStatus.waitingAck,
+            details: detail,
+          ),
+        );
+      } else {
+        final existing = updated[index];
+        if (existing.status == AlarmStatus.fixed) {
+          updated[index] = existing.copyWith(
+            incidentTime: _formatIncidentTime(now),
+            acknowledgement: AlarmAcknowledgement.waitingAck,
+            acknowledgementTime: '',
+            status: AlarmStatus.waitingAck,
+            details: detail,
+          );
+        } else {
+          updated[index] = existing.copyWith(details: detail);
+        }
+      }
+    }
+
     for (final device in activeDevices) {
       final alarmId = _lightingAlarmId(normalizedRoom, device);
       activeIds.add(alarmId);
-      final detail =
-          'RCU alarm source: Device-level lighting gear alarm. '
-          'Device: ${device.type.name.toUpperCase()} #${device.address} '
-          '(${device.name.trim().isEmpty ? 'Unnamed' : device.name.trim()}).';
+      final detail = _lightingDeviceAlarmDetail(device);
       final index = updated.indexWhere((alarm) => alarm.id == alarmId);
 
       if (index < 0) {
@@ -436,16 +487,20 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
       final alarm = updated[i];
       final isLightingDeviceAlarm =
           alarm.category == 'RCU' && alarm.id.startsWith(roomPrefix);
-      if (!isLightingDeviceAlarm) {
+      final isLineAlarm = alarm.category == 'RCU' && alarm.id == lineAlarmId;
+      if (!isLightingDeviceAlarm && !isLineAlarm) {
         continue;
       }
       final stillActive = activeIds.contains(alarm.id);
       if (stillActive || alarm.status == AlarmStatus.fixed) {
         continue;
       }
+      final resolvedSuffix = isLineAlarm
+          ? ' Resolved automatically (DALI line short circuit cleared).'
+          : ' Resolved automatically (device alarm off).';
       updated[i] = alarm.copyWith(
         status: AlarmStatus.fixed,
-        details: '${alarm.details} Resolved automatically (device alarm off).',
+        details: '${alarm.details}$resolvedSuffix',
       );
     }
 
@@ -459,15 +514,42 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
   }
 
   String _lightingRoomPrefix(String roomNumber) {
-    final normalized = roomNumber
-        .trim()
-        .toLowerCase()
-        .replaceAll(RegExp(r'\s+'), '_');
+    final normalized = roomNumber.trim().toLowerCase().replaceAll(
+      RegExp(r'\s+'),
+      '_',
+    );
     return 'lighting-device-$normalized-';
+  }
+
+  String _lightingLineAlarmId(String roomNumber) {
+    final normalized = roomNumber.trim().toLowerCase().replaceAll(
+      RegExp(r'\s+'),
+      '_',
+    );
+    return 'lighting-line-$normalized';
   }
 
   String _lightingAlarmId(String roomNumber, LightingDeviceSummary device) {
     return '${_lightingRoomPrefix(roomNumber)}${device.type.name}-${device.address}';
+  }
+
+  String _lightingDeviceAlarmDetail(LightingDeviceSummary device) {
+    final deviceName = device.name.trim().isEmpty
+        ? 'Unnamed'
+        : device.name.trim();
+    final deviceLabel =
+        '${device.type.name.toUpperCase()} #${device.address} ($deviceName)';
+    if (device.daliSituation == 3) {
+      return 'RCU alarm source: Device-level lighting gear alarm. '
+          'Difference: this device alarm is reported as pendent. '
+          'Device: $deviceLabel.';
+    }
+    final situationSuffix = device.daliSituation != null
+        ? ' (daliSituation=${device.daliSituation})'
+        : '';
+    return 'RCU alarm source: Device-level lighting gear alarm. '
+        'Difference: this is not a line short circuit; device-level fault state '
+        'is active$situationSuffix. Device: $deviceLabel.';
   }
 
   @visibleForTesting
@@ -495,5 +577,6 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
       List<String>.from(_alarmCategories);
 }
 
-final alarmsProvider =
-    NotifierProvider<AlarmsNotifier, AlarmsState>(AlarmsNotifier.new);
+final alarmsProvider = NotifierProvider<AlarmsNotifier, AlarmsState>(
+  AlarmsNotifier.new,
+);

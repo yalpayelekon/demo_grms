@@ -411,20 +411,21 @@ func (r *realRcuClient) Snapshot(serviceEvents []map[string]interface{}) map[str
 	}
 
 	m := map[string]interface{}{
-		"number":          r.room,
-		"hvac":            hvacStateStr,
-		"hvacDetail":      hvacPayload,
-		"lighting":        r.mapLightingStringLocked(),
-		"lightingOn":      r.isLightingOnLocked(),
-		"dnd":             dndNormalized,
-		"mur":             murNormalized,
-		"laundry":         laundryNormalized,
-		"occupancy":       occupancy,
-		"status":          status,
-		"hasAlarm":        r.mapHasAlarmLocked(),
-		"hasDoorAlarm":    r.hasDoorAlarm,
-		"lightingDevices": r.buildLightingDevicesLocked(),
-		"serviceEvents":   serviceEvents,
+		"number":                  r.room,
+		"hvac":                    hvacStateStr,
+		"hvacDetail":              hvacPayload,
+		"lighting":                r.mapLightingStringLocked(),
+		"lightingOn":              r.isLightingOnLocked(),
+		"dnd":                     dndNormalized,
+		"mur":                     murNormalized,
+		"laundry":                 laundryNormalized,
+		"occupancy":               occupancy,
+		"status":                  status,
+		"hasAlarm":                r.mapHasAlarmLocked(),
+		"hasDoorAlarm":            r.hasDoorAlarm,
+		"hasDaliLineShortCircuit": r.daliLineShortCircuit,
+		"lightingDevices":         r.buildLightingDevicesLocked(),
+		"serviceEvents":           serviceEvents,
 	}
 	if m["mur"] == "Delayed" {
 		m["murDelayedMinutes"] = 15

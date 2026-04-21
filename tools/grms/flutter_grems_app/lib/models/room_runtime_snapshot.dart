@@ -11,6 +11,7 @@ class RoomRuntimeSnapshot {
     required this.receivedAt,
     this.rawHasAlarm = false,
     this.hasDoorAlarm = false,
+    this.hasDaliLineShortCircuit = false,
   });
 
   final RoomData roomData;
@@ -21,6 +22,7 @@ class RoomRuntimeSnapshot {
   final DateTime receivedAt;
   final bool rawHasAlarm;
   final bool hasDoorAlarm;
+  final bool hasDaliLineShortCircuit;
 
   factory RoomRuntimeSnapshot.fromSnapshot(
     Map<String, dynamic> snapshot, {
@@ -43,6 +45,8 @@ class RoomRuntimeSnapshot {
       receivedAt: receivedAt,
       rawHasAlarm: snapshot['hasAlarm'] as bool? ?? false,
       hasDoorAlarm: snapshot['hasDoorAlarm'] as bool? ?? false,
+      hasDaliLineShortCircuit:
+          snapshot['hasDaliLineShortCircuit'] as bool? ?? false,
     );
   }
 

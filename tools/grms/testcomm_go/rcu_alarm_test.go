@@ -126,6 +126,22 @@ func TestSnapshotIncludesDoorAlarmState(t *testing.T) {
 	}
 }
 
+func TestSnapshotIncludesDaliLineShortCircuitState(t *testing.T) {
+	client := newRealRcuClient("Demo 101", RcuConfig{Host: "127.0.0.1", Port: 5556})
+	client.daliLineShortCircuit = true
+
+	client.mu.RLock()
+	snapshot := client.Snapshot(nil)
+	client.mu.RUnlock()
+
+	if got := snapshot["hasDaliLineShortCircuit"]; got != true {
+		t.Fatalf("expected snapshot hasDaliLineShortCircuit=true, got %#v", got)
+	}
+	if got := snapshot["hasAlarm"]; got != true {
+		t.Fatalf("expected snapshot hasAlarm=true when dali line short circuit is active, got %#v", got)
+	}
+}
+
 func TestSnapshotIncludesCanonicalOccupancyState(t *testing.T) {
 	client := newRealRcuClient("Demo 101", RcuConfig{Host: "127.0.0.1", Port: 5556})
 	client.isRoomOccupied = false
