@@ -725,6 +725,11 @@ func (r *realRcuClient) ExecuteRawCommand(frame []byte, requestID string) map[st
 					"rcu.raw.query sent room=%s frame_hex=% X reply_cmd_type=0x%X reply_cmd=0x%X reply_subcmd=0x%X reply_payload_hex=% X requestId=%s",
 					r.room, frame, reply.CmdType, reply.CmdNo, reply.SubCmdNo, reply.Payload, requestID,
 				)
+				parsedToState := false
+				if len(frame) >= 6 && frame[3] == 0x02 && frame[4] == 0x04 && frame[5] == 0x10 {
+					r.parseDaliLineStatus(reply.Payload)
+					parsedToState = true
+				}
 				return map[string]interface{}{
 					"triggered":       true,
 					"source":          "live",
@@ -734,6 +739,7 @@ func (r *realRcuClient) ExecuteRawCommand(frame []byte, requestID string) map[st
 					"responseCmd":     reply.CmdNo,
 					"responseSubCmd":  reply.SubCmdNo,
 					"responseHex":     fmt.Sprintf("% X", reply.Payload),
+					"parsedToState":   parsedToState,
 				}, nil
 			}
 			if err := r.sendCommandNoResponseLockedWithTimeout(frame, timeout); err != nil {
