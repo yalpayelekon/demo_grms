@@ -727,6 +727,7 @@ func (r *realRcuClient) ExecuteRawCommand(frame []byte, requestID string) map[st
 				)
 				parsedToState := false
 				if len(frame) >= 6 && frame[3] == 0x02 && frame[4] == 0x04 && frame[5] == 0x10 {
+					r.markDaliLineStatusSuccess()
 					r.parseDaliLineStatus(reply.Payload)
 					parsedToState = true
 				}
