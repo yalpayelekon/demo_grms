@@ -6,7 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
+import '../models/lighting_device.dart';
 import '../models/room_runtime_snapshot.dart';
+import 'alarms_provider.dart';
 import 'api_providers.dart';
 import 'room_alias_provider.dart';
 
@@ -106,13 +108,9 @@ class RoomSnapshotNotifier
       );
     }
     final sourceProvider = roomSnapshotProvider(backendRoomNumber);
-    ref.listen<DemoRoomSnapshotState>(
-      sourceProvider,
-      (previous, next) {
-        _applyProxyState(next, backendRoomNumber);
-      },
-      fireImmediately: true,
-    );
+    ref.listen<DemoRoomSnapshotState>(sourceProvider, (previous, next) {
+      _applyProxyState(next, backendRoomNumber);
+    }, fireImmediately: true);
   }
 
   void _start() {
@@ -294,6 +292,7 @@ class RoomSnapshotNotifier
       displaySnapshot,
       receivedAt: DateTime.now(),
     );
+    _scheduleAlarmSync(runtimeSnapshot);
     if (kDebugMode) {
       final version = state.snapshotVersion + 1;
       final prevSnapshot = state.snapshot;
@@ -393,6 +392,9 @@ class RoomSnapshotNotifier
             receivedAt:
                 sourceState.runtimeSnapshot?.receivedAt ?? DateTime.now(),
           );
+    if (proxiedRuntimeSnapshot != null) {
+      _scheduleAlarmSync(proxiedRuntimeSnapshot);
+    }
     state = const DemoRoomSnapshotState().copyWith(
       snapshot: proxiedSnapshot,
       runtimeSnapshot: proxiedRuntimeSnapshot,
@@ -406,6 +408,26 @@ class RoomSnapshotNotifier
       clearMessage: sourceState.message == null,
       reconnectAttempt: sourceState.reconnectAttempt,
     );
+  }
+
+  void _syncAlarms(RoomRuntimeSnapshot snapshot) {
+    final devices = <LightingDeviceSummary>[
+      ...snapshot.lighting.onboardOutputs,
+      ...snapshot.lighting.daliOutputs,
+    ];
+    ref
+        .read(alarmsProvider.notifier)
+        .syncLightingDeviceAlarmsForRoom(
+          snapshot.roomData.number,
+          devices,
+          hasDaliLineShortCircuit: snapshot.hasDaliLineShortCircuit,
+        );
+  }
+
+  void _scheduleAlarmSync(RoomRuntimeSnapshot snapshot) {
+    Future<void>.microtask(() {
+      _syncAlarms(snapshot);
+    });
   }
 
   Map<String, dynamic> _withDisplayRoomNumber(Map<String, dynamic> snapshot) {

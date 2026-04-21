@@ -129,11 +129,12 @@ class CoordinatesSyncNotifier extends Notifier<CoordinatesSyncState> {
     return buildCoordinatesWsUri(baseUrl);
   }
 
-  void _connectWebSocket() {
+  Future<void> _connectWebSocket() async {
     _reconnectTimer?.cancel();
 
     try {
       final channel = WebSocketChannel.connect(_coordinatesWsUri());
+      await channel.ready;
       _channel = channel;
       _channelSubscription = channel.stream.listen(
         _onSocketMessage,

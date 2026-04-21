@@ -1194,6 +1194,19 @@ func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
 		return "cache", coreRes.err
 	}
 
+	miscRes := r.enqueueOperation(opRequest{
+		kind:     opKindRefreshMisc,
+		priority: priority,
+		timeout:  timeoutFor(opKindRefreshMisc),
+		metadata: "refresh_dali_line_status",
+		exec: func(timeout time.Duration) (map[string]interface{}, error) {
+			return nil, r.refreshDaliLineStatusLockedConn()
+		},
+	})
+	if miscRes.err != nil {
+		logPollingf("rcu.refresh.misc warn room=%s op=dali_line_status error=%v", r.room, miscRes.err)
+	}
+
 	partial := false
 	addresses := r.outputAddresses()
 	total := len(addresses)

@@ -6,6 +6,7 @@ import '../models/lighting_device.dart';
 import '../models/room_models.dart';
 import '../models/room_runtime_snapshot.dart';
 import '../utils/lighting_dim_level_curves.dart';
+import 'alarms_provider.dart';
 import 'demo_room_snapshot_provider.dart';
 import 'lighting_devices_provider.dart';
 
@@ -129,9 +130,37 @@ class RoomLightingRuntimeNotifier
       next,
     ) {
       _applySnapshot(next);
+      _scheduleAlarmSync(next);
     });
     final snapshot = ref.read(roomRuntimeSnapshotProvider(roomNumber));
+    _scheduleAlarmSync(snapshot);
     return RoomLightingRuntimeState(lighting: snapshot?.lighting);
+  }
+
+  void _syncAlarms(RoomRuntimeSnapshot? snapshot) {
+    if (snapshot == null) {
+      return;
+    }
+    final devices = <LightingDeviceSummary>[
+      ...snapshot.lighting.onboardOutputs,
+      ...snapshot.lighting.daliOutputs,
+    ];
+    ref
+        .read(alarmsProvider.notifier)
+        .syncLightingDeviceAlarmsForRoom(
+          _roomNumber,
+          devices,
+          hasDaliLineShortCircuit: snapshot.hasDaliLineShortCircuit,
+        );
+  }
+
+  void _scheduleAlarmSync(RoomRuntimeSnapshot? snapshot) {
+    if (snapshot == null) {
+      return;
+    }
+    Future<void>.microtask(() {
+      _syncAlarms(snapshot);
+    });
   }
 
   void startScene(int scene, String requestId, DateTime startedAt) {
