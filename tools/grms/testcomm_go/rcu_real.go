@@ -1684,6 +1684,9 @@ func (r *realRcuClient) drainIncomingFramesLockedConn(wait time.Duration) error 
 func (r *realRcuClient) sendModbusReadAndAwaitAckLocked(register int, count int, shortAddr int) (*modbusReadReturnEvent, error) {
 	msg := buildModbusReadRegisterMessage(register, count, shortAddr)
 	r.ensureReaderReadyLocked()
+	if r.conn == nil {
+		return nil, fmt.Errorf("rcu connection is nil")
+	}
 	r.discardUnexpectedInboundLocked("before_modbus_read")
 	if err := r.conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		return nil, err
@@ -1729,6 +1732,9 @@ func (r *realRcuClient) sendModbusReadAndAwaitAckLocked(register int, count int,
 
 func (r *realRcuClient) sendModbusWriteAndAwaitAckLocked(msg []byte, shortAddr int) (*modbusWriteReturnEvent, error) {
 	r.ensureReaderReadyLocked()
+	if r.conn == nil {
+		return nil, fmt.Errorf("rcu connection is nil")
+	}
 	r.discardUnexpectedInboundLocked("before_modbus_write")
 	if err := r.conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		return nil, err
