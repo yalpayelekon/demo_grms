@@ -42,7 +42,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       });
     }
 
-    final success = await ref.read(authProvider.notifier).login(username, password);
+    final success = await ref
+        .read(authProvider.notifier)
+        .login(username, password);
 
     if (success) {
       if (mounted) {
@@ -61,7 +63,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Scaffold(
       body: Container(
         width: double.infinity,
@@ -70,10 +72,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              theme.colorScheme.surface,
-              theme.colorScheme.background,
-            ],
+            colors: [theme.colorScheme.surface, theme.colorScheme.background],
           ),
         ),
         child: Center(
@@ -90,9 +89,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.03),
                       borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: Colors.white.withOpacity(0.08),
-                      ),
+                      border: Border.all(color: Colors.white.withOpacity(0.08)),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withOpacity(0.2),
@@ -135,16 +132,25 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             decoration: BoxDecoration(
                               color: Colors.red.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.red.withOpacity(0.2)),
+                              border: Border.all(
+                                color: Colors.red.withOpacity(0.2),
+                              ),
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.error_outline, color: Colors.redAccent, size: 20),
+                                const Icon(
+                                  Icons.error_outline,
+                                  color: Colors.redAccent,
+                                  size: 20,
+                                ),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
                                     _error,
-                                    style: const TextStyle(color: Colors.redAccent, fontSize: 14),
+                                    style: const TextStyle(
+                                      color: Colors.redAccent,
+                                      fontSize: 14,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -170,7 +176,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: Colors.blue, width: 1),
+                              borderSide: const BorderSide(
+                                color: Colors.blue,
+                                width: 1,
+                              ),
                             ),
                           ),
                         ),
@@ -194,7 +203,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: Colors.blue, width: 1),
+                              borderSide: const BorderSide(
+                                color: Colors.blue,
+                                width: 1,
+                              ),
                             ),
                           ),
                           onSubmitted: (_) => _handleSubmit(),
@@ -244,17 +256,21 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               Text(
                                 'Demo Credentials:',
                                 style: TextStyle(
-                                  color: theme.colorScheme.onSurface.withOpacity(0.4),
+                                  color: theme.colorScheme.onSurface
+                                      .withOpacity(0.4),
                                   fontSize: 13,
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
                               const SizedBox(height: 8),
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
-                                  _CredentialItem(label: 'Admin', value: 'admin / admin'),
-                                  _CredentialItem(label: 'Viewer', value: 'test / test'),
+                                  _CredentialItem(
+                                    label: 'Viewer',
+                                    value: 'test / test',
+                                  ),
                                 ],
                               ),
                             ],
