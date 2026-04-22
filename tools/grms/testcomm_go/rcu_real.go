@@ -30,13 +30,14 @@ const demoPriorityAlarmRoom = "Demo 101"
 const demoPriorityAlarmAddress = 10
 
 const (
-	connectTimeout        = 3 * time.Second
-	sceneCommandTimeout   = 1800 * time.Millisecond
-	sceneWriteOnlyTimeout = 238 * time.Millisecond
-	lightingWriteTimeout  = 2 * time.Second
-	refreshCoreTimeout    = 1200 * time.Millisecond
-	refreshOutputTimeout  = 900 * time.Millisecond
-	timeoutCap            = 5 * time.Second
+	connectTimeout          = 3 * time.Second
+	sceneCommandTimeout     = 1800 * time.Millisecond
+	sceneWriteOnlyTimeout   = 238 * time.Millisecond
+	lightingWriteTimeout    = 2 * time.Second
+	refreshCoreTimeout      = 1200 * time.Millisecond
+	refreshOutputTimeout    = 900 * time.Millisecond
+	timeoutCap              = 5 * time.Second
+	inboundFrameReadTimeout = 2 * time.Second
 )
 
 const (
@@ -3217,6 +3218,12 @@ func readFrame(conn net.Conn) (*rcuFrame, error) {
 	if header[0] != rcuHeader {
 		return nil, fmt.Errorf("invalid frame header: 0x%X", header[0])
 	}
+	if err := conn.SetReadDeadline(time.Now().Add(inboundFrameReadTimeout)); err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = conn.SetReadDeadline(time.Time{})
+	}()
 	lenBytes := make([]byte, 2)
 	if _, err := io.ReadFull(conn, lenBytes); err != nil {
 		return nil, err
