@@ -2522,8 +2522,11 @@ func shouldResetConnOnError(err error) bool {
 	if err == nil {
 		return false
 	}
+	if neverCloseConnection() {
+		return false
+	}
 	switch classifyNetworkFault(err) {
-	case faultTimeout, faultConnReset, faultBrokenPipe, faultNilConn:
+	case faultConnReset, faultBrokenPipe, faultNilConn:
 		return true
 	}
 	return isTransientCommandError(err)
