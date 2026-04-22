@@ -1352,11 +1352,8 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     final isOn = stateText == 'On';
     final timestampText = entry?.activationTime ?? '-';
     final actionLabels = ('On', 'Off');
-    final toggledDisplayState = isOn ? 'Off' : 'On';
-    final toggledServiceState = _serviceStateFromDisplay(
-      serviceType,
-      toggledDisplayState,
-    );
+    final onServiceState = _serviceStateFromDisplay(serviceType, 'On');
+    final offServiceState = _serviceStateFromDisplay(serviceType, 'Off');
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -1403,7 +1400,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
               onPressed: () => _applyServiceAction(
                 roomNumber: roomNumber,
                 serviceType: serviceType,
-                serviceState: toggledServiceState,
+                serviceState: onServiceState,
               ),
               child: Text(
                 actionLabels.$1,
@@ -1425,7 +1422,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
               onPressed: () => _applyServiceAction(
                 roomNumber: roomNumber,
                 serviceType: serviceType,
-                serviceState: toggledServiceState,
+                serviceState: offServiceState,
               ),
               child: Text(
                 actionLabels.$2,
@@ -1446,7 +1443,14 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
         return onStates.contains(normalized) ? 'On' : 'Off';
       case ServiceType.mur:
       case ServiceType.laundry:
-        const onStates = {'requested', 'started', 'yellow', 'on', 'active'};
+        const onStates = {
+          'requested',
+          'started',
+          'delayed',
+          'yellow',
+          'on',
+          'active',
+        };
         return onStates.contains(normalized) ? 'On' : 'Off';
     }
   }
@@ -1751,7 +1755,9 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
         if (normalized == 'delayed') return '${basePath}murDelayed.png';
         if (normalized == 'requested' ||
             normalized == 'started' ||
-            normalized == 'yellow') {
+            normalized == 'yellow' ||
+            normalized == 'on' ||
+            normalized == 'active') {
           return '${basePath}muryellow.png';
         }
         return '${basePath}mur.png';
@@ -1759,7 +1765,9 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
         if (normalized == 'delayed') return '${basePath}lndDelayed.png';
         if (normalized == 'requested' ||
             normalized == 'started' ||
-            normalized == 'yellow') {
+            normalized == 'yellow' ||
+            normalized == 'on' ||
+            normalized == 'active') {
           return '${basePath}lndyellow.png';
         }
         return '${basePath}lnd.png';
