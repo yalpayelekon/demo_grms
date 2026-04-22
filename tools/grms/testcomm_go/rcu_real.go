@@ -26,6 +26,8 @@ const (
 const minRefreshInterval = 1 * time.Second
 const sceneRefreshBlock = 500 * time.Millisecond
 const refreshOutputBudgetPerCycle = 4
+const demoPriorityAlarmRoom = "Demo 101"
+const demoPriorityAlarmAddress = 10
 
 const (
 	connectTimeout        = 3 * time.Second
@@ -1214,6 +1216,39 @@ func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
 
 	partial := false
 	addresses := r.outputAddresses()
+	if priorityAddr, ok := r.priorityAlarmOutputAddress(addresses); ok {
+		if len(r.priorityOpCh) > 0 {
+			partial = true
+		} else if active, _ := r.sceneWindowRemainingMs(); active {
+			r.refreshSkipCounter.Add(1)
+			logPollingf("rcu.refresh.preempt room=%s phase=scene_window", r.room)
+			partial = true
+		} else if r.hasPendingWrite() {
+			r.refreshSkipCounter.Add(1)
+			logPollingf("rcu.refresh.preempt room=%s phase=dynamic_outputs", r.room)
+			partial = true
+		} else {
+			priorityRes := r.enqueueOperation(opRequest{
+				kind:     opKindRefreshOutput,
+				priority: priority,
+				timeout:  timeoutFor(opKindRefreshOutput),
+				metadata: fmt.Sprintf("priority_alarm_address=%d", priorityAddr),
+				exec: func(address int) func(time.Duration) (map[string]interface{}, error) {
+					return func(timeout time.Duration) (map[string]interface{}, error) {
+						return nil, r.refreshOutputLockedConnWithTimeout(address, timeout)
+					}
+				}(priorityAddr),
+			})
+			if priorityRes.err != nil {
+				logPollingf("rcu.output priority refresh warn room=%s address=%d error=%v", r.room, priorityAddr, priorityRes.err)
+			}
+			if r.hasPendingWrite() {
+				r.refreshSkipCounter.Add(1)
+				logPollingf("rcu.refresh.preempt room=%s phase=dynamic_outputs", r.room)
+				partial = true
+			}
+		}
+	}
 	total := len(addresses)
 	processed := 0
 	remaining := 0
@@ -2877,6 +2912,18 @@ func (r *realRcuClient) outputAddresses() []int {
 	}
 	sort.Ints(out)
 	return out
+}
+
+func (r *realRcuClient) priorityAlarmOutputAddress(addresses []int) (int, bool) {
+	if !strings.EqualFold(strings.TrimSpace(r.room), demoPriorityAlarmRoom) {
+		return 0, false
+	}
+	for _, addr := range addresses {
+		if addr == demoPriorityAlarmAddress {
+			return addr, true
+		}
+	}
+	return 0, false
 }
 
 func (r *realRcuClient) sortedOutputsLocked() []*outputDeviceState {
