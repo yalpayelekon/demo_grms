@@ -1,0 +1,286 @@
+TESTCOMM_LOG_POLLING=1 go run .
+2026/04/22 16:27:41.185758 startup.log_file path=/home/elekonpi/demo_grms/tools/grms/testcomm_go/testcomm_go.log mode=truncate_on_start
+2026/04/22 16:27:41.187516 demo_rcu.resolver config_dir=/home/elekonpi/demo_grms/tools/grms/testcomm_go/config legacy_config_dir=/home/elekonpi/demo_grms/tools/grms/testcomm_go/config zones=/home/elekonpi/demo_grms/tools/grms/testcomm_go/config/zones.json lighting_devices=/home/elekonpi/demo_grms/tools/grms/testcomm_go/config/lighting-devices.json service_icons=/home/elekonpi/demo_grms/tools/grms/testcomm_go/config/service-icons.json demo_rcu=/home/elekonpi/demo_grms/tools/grms/testcomm_go/config/demo-rcu.json rooms=/home/elekonpi/demo_grms/tools/grms/testcomm_go/config/testcomm_rooms.json
+2026/04/22 16:27:41.188012 coordinates.resolver config_dir=/home/elekonpi/demo_grms/tools/grms/testcomm_go/config legacy_config_dir=/home/elekonpi/demo_grms/tools/grms/testcomm_go/config zones=/home/elekonpi/demo_grms/tools/grms/testcomm_go/config/zones.json lighting_devices=/home/elekonpi/demo_grms/tools/grms/testcomm_go/config/lighting-devices.json service_icons=/home/elekonpi/demo_grms/tools/grms/testcomm_go/config/service-icons.json demo_rcu=/home/elekonpi/demo_grms/tools/grms/testcomm_go/config/demo-rcu.json rooms=/home/elekonpi/demo_grms/tools/grms/testcomm_go/config/testcomm_rooms.json
+2026/04/22 16:27:41.192176 startup.simulator_enabled=false
+2026/04/22 16:27:41.192587 TestComm Go server listening on http://localhost:8082
+2026/04/22 16:27:41.192710 startup.config db_path=
+2026/04/22 16:27:41.192817 coordinates.config_dir=/home/elekonpi/demo_grms/tools/grms/testcomm_go/config
+2026/04/22 16:27:41.192931 coordinates.zones_file=/home/elekonpi/demo_grms/tools/grms/testcomm_go/config/zones.json
+2026/04/22 16:27:41.193033 coordinates.lighting_devices_file=/home/elekonpi/demo_grms/tools/grms/testcomm_go/config/lighting-devices.json
+2026/04/22 16:27:41.193126 demo_rcu.config_file=/home/elekonpi/demo_grms/tools/grms/testcomm_go/config/demo-rcu.json
+2026/04/22 16:27:41.193230 startup.room_config room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:27:43.153327 rcu.client.created room=Demo 101 host=192.168.1.114 port=5556 source=live
+2026/04/22 16:27:43.154088 rcu.op.exec room=Demo 101 kind=refresh_misc priority=normal timeoutMs=3000 metadata=initialize
+2026/04/22 16:27:43.159415 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:27:43.677562 rcu.refresh.core_state room=Demo 101 occupied=false doorOpen=true hasDoorAlarm=false dnd=false mur=0 laundry=true
+2026/04/22 16:27:43.889650 rcu.initialized room=Demo 101 outputs=31
+2026/04/22 16:27:43.894403 rcu.disconnect room=Demo 101
+2026/04/22 16:27:43.894672 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:27:43.896822 rcu.connect.backoff room=Demo 101 delayMs=244 reason=dial tcp 192.168.1.114:5556: connect: connection refused failCount=1
+2026/04/22 16:27:43.897180 rcu.refresh failed room=Demo 101 host=192.168.1.114 port=5556 error=dial tcp 192.168.1.114:5556: connect: connection refused
+2026/04/22 16:27:43.897363 rcu.initialize_and_update.duration durationMs=743 room=Demo 101 success=false refreshOutcome=cache
+2026/04/22 16:27:46.902298 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:27:47.128848 rcu.disconnect room=Demo 101
+2026/04/22 16:27:49.903734 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:27:50.112164 rcu.disconnect room=Demo 101
+2026/04/22 16:27:52.903471 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:27:53.111190 rcu.disconnect room=Demo 101
+2026/04/22 16:27:55.902092 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:27:56.110331 rcu.disconnect room=Demo 101
+2026/04/22 16:27:58.902142 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:27:59.109646 rcu.disconnect room=Demo 101
+2026/04/22 16:28:00.154761 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:00.160043 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:28:00.513401 rcu.refresh.core_state room=Demo 101 occupied=false doorOpen=true hasDoorAlarm=false dnd=false mur=0 laundry=true
+2026/04/22 16:28:00.514093 rcu.op.exec room=Demo 101 kind=refresh_misc priority=normal timeoutMs=3000 metadata=refresh_dali_line_status
+2026/04/22 16:28:00.518893 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=0
+2026/04/22 16:28:00.540876 DEBUG rcu.dali.masthead parsed room=Demo 101 address=0 situation=1 alarm=false payload=02 0A 01 00 00 04 57 00 01 02 03 04 05 00 00 00 00 00 00 00 00 00 00 00
+2026/04/22 16:28:00.541474 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=1
+2026/04/22 16:28:00.563399 DEBUG rcu.dali.masthead parsed room=Demo 101 address=1 situation=1 alarm=false payload=02 0A 01 00 00 08 3F 00 01 02 03 04 05 00 00 00 00 00 00 00 00 00 00 00
+2026/04/22 16:28:00.564092 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=2
+2026/04/22 16:28:00.588048 DEBUG rcu.dali.masthead parsed room=Demo 101 address=2 situation=1 alarm=false payload=02 0A 01 00 00 0C 27 00 01 02 03 04 05 00 00 00 00 00 00 00 00 00 00 00
+2026/04/22 16:28:00.589007 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=3
+2026/04/22 16:28:00.614857 DEBUG rcu.dali.masthead parsed room=Demo 101 address=3 situation=1 alarm=false payload=02 0A 01 00 00 10 0F 00 01 02 03 04 05 00 00 00 00 00 00 00 00 00 00 00
+2026/04/22 16:28:00.615367 rcu.refresh.budget room=Demo 101 processed=4 remaining=27 outcome=partial
+2026/04/22 16:28:00.615787 rcu.refresh.outcome room=Demo 101 outcome=partial
+2026/04/22 16:28:00.616045 rcu.initialize_and_update.duration durationMs=461 room=Demo 101 success=true refreshOutcome=partial
+2026/04/22 16:28:02.102846 rcu.disconnect room=Demo 101
+2026/04/22 16:28:02.156089 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:02.158008 rcu.connect.backoff room=Demo 101 delayMs=208 reason=dial tcp 192.168.1.114:5556: connect: connection refused failCount=1
+2026/04/22 16:28:02.158298 rcu.refresh failed room=Demo 101 host=192.168.1.114 port=5556 error=dial tcp 192.168.1.114:5556: connect: connection refused
+2026/04/22 16:28:02.158648 snapshot.fallback.cache room=Demo 101
+2026/04/22 16:28:04.156501 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:04.161961 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:28:04.485081 rcu.refresh.core_state room=Demo 101 occupied=false doorOpen=true hasDoorAlarm=false dnd=false mur=0 laundry=true
+2026/04/22 16:28:04.485437 rcu.op.exec room=Demo 101 kind=refresh_misc priority=normal timeoutMs=3000 metadata=refresh_dali_line_status
+2026/04/22 16:28:04.493692 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=4
+2026/04/22 16:28:04.528424 DEBUG rcu.dali.masthead parsed room=Demo 101 address=4 situation=1 alarm=false payload=02 0A 01 00 00 13 F7 00 01 02 03 04 05 00 00 00 00 00 00 00 00 00 00 00
+2026/04/22 16:28:04.528817 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=5
+2026/04/22 16:28:04.566722 DEBUG rcu.dali.masthead parsed room=Demo 101 address=5 situation=1 alarm=false payload=02 0A 01 00 00 17 DF 00 01 02 03 04 05 00 00 00 00 00 00 00 00 00 00 00
+2026/04/22 16:28:04.567571 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=6
+2026/04/22 16:28:04.603833 DEBUG rcu.dali.masthead parsed room=Demo 101 address=6 situation=1 alarm=false payload=02 0A 01 00 00 1B C7 00 01 02 03 04 05 00 00 00 00 00 00 00 00 00 00 00
+2026/04/22 16:28:04.604225 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=7
+2026/04/22 16:28:04.635127 DEBUG rcu.dali.masthead parsed room=Demo 101 address=7 situation=1 alarm=false payload=02 0A 01 00 00 1F AF 00 01 02 03 04 05 00 00 00 00 00 00 00 00 00 00 00
+2026/04/22 16:28:04.636024 rcu.refresh.budget room=Demo 101 processed=4 remaining=27 outcome=partial
+2026/04/22 16:28:04.636239 rcu.refresh.outcome room=Demo 101 outcome=partial
+2026/04/22 16:28:04.636729 rcu.initialize_and_update.duration durationMs=480 room=Demo 101 success=true refreshOutcome=partial
+2026/04/22 16:28:04.638692 room.stream.snapshot.duration durationMs=482 room=Demo 101
+2026/04/22 16:28:05.103460 rcu.disconnect room=Demo 101
+2026/04/22 16:28:06.155645 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:06.161283 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:28:06.457930 rcu.refresh.core_state room=Demo 101 occupied=false doorOpen=true hasDoorAlarm=false dnd=false mur=0 laundry=true
+2026/04/22 16:28:06.458240 rcu.op.exec room=Demo 101 kind=refresh_misc priority=normal timeoutMs=3000 metadata=refresh_dali_line_status
+2026/04/22 16:28:06.466813 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=8
+2026/04/22 16:28:06.501429 DEBUG rcu.dali.masthead parsed room=Demo 101 address=8 situation=1 alarm=false payload=02 0A 01 00 DA C6 90 05 D6 6B B3 54 F1 00 00 00 00 00 00 00 07 02 00 00
+2026/04/22 16:28:06.501692 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=9
+2026/04/22 16:28:06.544696 DEBUG rcu.dali.masthead parsed room=Demo 101 address=9 situation=1 alarm=false payload=02 0A 01 00 0A 49 BA 05 D6 6B B3 54 F1 00 00 00 00 00 00 00 07 02 00 00
+2026/04/22 16:28:06.545076 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=10
+2026/04/22 16:28:06.569947 DEBUG rcu.dali.masthead parsed room=Demo 101 address=10 situation=1 alarm=false payload=02 0A 01 00 27 6C 99 05 D6 6B B3 54 F1 00 00 00 00 00 00 00 07 02 00 00
+2026/04/22 16:28:06.570243 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=11
+2026/04/22 16:28:06.607325 DEBUG rcu.dali.masthead parsed room=Demo 101 address=11 situation=1 alarm=false payload=02 0A 01 00 0C 6B 42 05 D6 6B B3 54 F1 00 00 00 00 00 00 00 07 02 00 00
+2026/04/22 16:28:06.607720 rcu.refresh.budget room=Demo 101 processed=4 remaining=27 outcome=partial
+2026/04/22 16:28:06.607941 rcu.refresh.outcome room=Demo 101 outcome=partial
+2026/04/22 16:28:06.608059 rcu.initialize_and_update.duration durationMs=452 room=Demo 101 success=true refreshOutcome=partial
+2026/04/22 16:28:06.610000 room.stream.snapshot.duration durationMs=454 room=Demo 101
+2026/04/22 16:28:08.101562 rcu.disconnect room=Demo 101
+2026/04/22 16:28:08.155781 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:08.158863 rcu.connect.backoff room=Demo 101 delayMs=253 reason=dial tcp 192.168.1.114:5556: connect: connection refused failCount=1
+2026/04/22 16:28:08.159259 rcu.refresh failed room=Demo 101 host=192.168.1.114 port=5556 error=dial tcp 192.168.1.114:5556: connect: connection refused
+2026/04/22 16:28:08.159524 snapshot.fallback.cache room=Demo 101
+2026/04/22 16:28:10.156352 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:10.161670 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:28:10.431744 rcu.refresh.core_state room=Demo 101 occupied=false doorOpen=true hasDoorAlarm=false dnd=false mur=0 laundry=true
+2026/04/22 16:28:10.432015 rcu.op.exec room=Demo 101 kind=refresh_misc priority=normal timeoutMs=3000 metadata=refresh_dali_line_status
+2026/04/22 16:28:10.443751 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=12
+2026/04/22 16:28:10.489720 DEBUG rcu.dali.masthead parsed room=Demo 101 address=12 situation=1 alarm=false payload=02 0A 01 00 E1 F0 DD 05 D6 6B B3 54 F1 00 00 00 00 00 00 00 07 02 00 00
+2026/04/22 16:28:10.490388 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=13
+2026/04/22 16:28:10.519104 DEBUG rcu.dali.masthead parsed room=Demo 101 address=13 situation=1 alarm=false payload=02 0A 01 00 9E A1 9F 05 D6 6B B3 54 F1 00 00 00 00 00 00 00 07 02 00 00
+2026/04/22 16:28:10.520094 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=14
+2026/04/22 16:28:10.588740 DEBUG rcu.dali.masthead parsed room=Demo 101 address=14 situation=1 alarm=false payload=02 0A 01 00 BC F6 00 05 D6 6B B3 54 F1 00 00 00 00 00 00 00 07 02 00 00
+2026/04/22 16:28:10.589335 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=15
+2026/04/22 16:28:10.649873 DEBUG rcu.dali.masthead parsed room=Demo 101 address=15 situation=1 alarm=false payload=02 0A 01 00 8F A6 A9 05 D6 6B B3 54 F1 00 00 00 00 00 00 00 07 02 00 00
+2026/04/22 16:28:10.650098 rcu.refresh.budget room=Demo 101 processed=4 remaining=27 outcome=partial
+2026/04/22 16:28:10.650729 rcu.refresh.outcome room=Demo 101 outcome=partial
+2026/04/22 16:28:10.650780 rcu.initialize_and_update.duration durationMs=494 room=Demo 101 success=true refreshOutcome=partial
+2026/04/22 16:28:10.652572 room.stream.snapshot.duration durationMs=496 room=Demo 101
+2026/04/22 16:28:11.104509 rcu.disconnect room=Demo 101
+2026/04/22 16:28:12.155777 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:12.161023 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:28:12.440961 rcu.refresh.core_state room=Demo 101 occupied=false doorOpen=true hasDoorAlarm=false dnd=false mur=0 laundry=true
+2026/04/22 16:28:12.441284 rcu.op.exec room=Demo 101 kind=refresh_misc priority=normal timeoutMs=3000 metadata=refresh_dali_line_status
+2026/04/22 16:28:12.459933 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=16
+2026/04/22 16:28:12.491269 DEBUG rcu.dali.masthead parsed room=Demo 101 address=16 situation=1 alarm=false payload=02 0A 01 00 78 48 EE 05 D6 6B B3 54 F1 00 00 00 00 00 00 00 07 02 00 00
+2026/04/22 16:28:12.491930 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=17
+2026/04/22 16:28:12.535265 DEBUG rcu.dali.masthead parsed room=Demo 101 address=17 situation=1 alarm=false payload=02 0A 01 00 26 6E 8B 05 D6 6B B3 54 F1 00 00 00 00 00 00 00 07 02 00 00
+2026/04/22 16:28:12.536137 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=18
+2026/04/22 16:28:12.561711 DEBUG rcu.dali.masthead parsed room=Demo 101 address=18 situation=1 alarm=false payload=02 0A 01 00 AE 01 AF 05 D6 6B B3 54 F1 00 00 00 00 00 00 00 07 02 00 00
+2026/04/22 16:28:12.562509 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=77
+2026/04/22 16:28:12.580488 rcu.refresh.budget room=Demo 101 processed=4 remaining=27 outcome=partial
+2026/04/22 16:28:12.580853 rcu.refresh.outcome room=Demo 101 outcome=partial
+2026/04/22 16:28:12.581083 rcu.initialize_and_update.duration durationMs=425 room=Demo 101 success=true refreshOutcome=partial
+2026/04/22 16:28:12.583481 room.stream.snapshot.duration durationMs=427 room=Demo 101
+2026/04/22 16:28:14.103209 rcu.disconnect room=Demo 101
+2026/04/22 16:28:14.155420 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:14.162133 rcu.connect.backoff room=Demo 101 delayMs=212 reason=dial tcp 192.168.1.114:5556: connect: connection refused failCount=1
+2026/04/22 16:28:14.162403 rcu.refresh failed room=Demo 101 host=192.168.1.114 port=5556 error=dial tcp 192.168.1.114:5556: connect: connection refused
+2026/04/22 16:28:14.162605 snapshot.fallback.cache room=Demo 101
+2026/04/22 16:28:16.155118 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:16.161184 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:28:16.379625 rcu.refresh.core_state room=Demo 101 occupied=false doorOpen=true hasDoorAlarm=false dnd=false mur=0 laundry=true
+2026/04/22 16:28:16.379884 rcu.op.exec room=Demo 101 kind=refresh_misc priority=normal timeoutMs=3000 metadata=refresh_dali_line_status
+2026/04/22 16:28:16.395477 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=78
+2026/04/22 16:28:16.407377 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=79
+2026/04/22 16:28:16.434473 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=80
+2026/04/22 16:28:16.454235 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=81
+2026/04/22 16:28:16.470313 rcu.refresh.budget room=Demo 101 processed=4 remaining=27 outcome=partial
+2026/04/22 16:28:16.470552 rcu.refresh.outcome room=Demo 101 outcome=partial
+2026/04/22 16:28:16.470670 rcu.initialize_and_update.duration durationMs=315 room=Demo 101 success=true refreshOutcome=partial
+2026/04/22 16:28:16.472508 room.stream.snapshot.duration durationMs=317 room=Demo 101
+2026/04/22 16:28:17.102309 rcu.disconnect room=Demo 101
+2026/04/22 16:28:18.155679 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:18.160948 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:28:18.353591 rcu.refresh.core_state room=Demo 101 occupied=false doorOpen=true hasDoorAlarm=false dnd=false mur=0 laundry=true
+2026/04/22 16:28:18.353938 rcu.op.exec room=Demo 101 kind=refresh_misc priority=normal timeoutMs=3000 metadata=refresh_dali_line_status
+2026/04/22 16:28:18.358265 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=82
+2026/04/22 16:28:18.382266 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=83
+2026/04/22 16:28:18.403055 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=84
+2026/04/22 16:28:18.422684 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=85
+2026/04/22 16:28:18.436372 rcu.refresh.budget room=Demo 101 processed=4 remaining=27 outcome=partial
+2026/04/22 16:28:18.436539 rcu.refresh.outcome room=Demo 101 outcome=partial
+2026/04/22 16:28:18.436588 rcu.initialize_and_update.duration durationMs=281 room=Demo 101 success=true refreshOutcome=partial
+2026/04/22 16:28:18.438295 room.stream.snapshot.duration durationMs=282 room=Demo 101
+2026/04/22 16:28:20.102479 rcu.disconnect room=Demo 101
+2026/04/22 16:28:20.155778 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:20.157667 rcu.connect.backoff room=Demo 101 delayMs=224 reason=dial tcp 192.168.1.114:5556: connect: connection refused failCount=1
+2026/04/22 16:28:20.158008 rcu.refresh failed room=Demo 101 host=192.168.1.114 port=5556 error=dial tcp 192.168.1.114:5556: connect: connection refused
+2026/04/22 16:28:20.158206 snapshot.fallback.cache room=Demo 101
+2026/04/22 16:28:22.156175 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:22.161454 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:28:22.314167 rcu.refresh.core_state room=Demo 101 occupied=false doorOpen=true hasDoorAlarm=false dnd=false mur=0 laundry=true
+2026/04/22 16:28:22.314558 rcu.op.exec room=Demo 101 kind=refresh_misc priority=normal timeoutMs=3000 metadata=refresh_dali_line_status
+2026/04/22 16:28:22.324427 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=86
+2026/04/22 16:28:22.346208 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=87
+2026/04/22 16:28:22.364241 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=88
+2026/04/22 16:28:22.384189 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=0
+2026/04/22 16:28:22.412883 rcu.refresh.budget room=Demo 101 processed=4 remaining=27 outcome=partial
+2026/04/22 16:28:22.413140 rcu.refresh.outcome room=Demo 101 outcome=partial
+2026/04/22 16:28:22.413285 rcu.initialize_and_update.duration durationMs=257 room=Demo 101 success=true refreshOutcome=partial
+2026/04/22 16:28:22.415223 room.stream.snapshot.duration durationMs=259 room=Demo 101
+2026/04/22 16:28:22.450070 rcu.event room=Demo 101 cmdType=4 cmdNo=5 subCmdNo=2 eventKey=5:2 payloadLen=0 payloadHex=
+2026/04/22 16:28:22.450330 rcu.event.type room=Demo 101 eventKey=5:2 eventType=Event_occapp_door_open_alarm detail=open door alarm raised
+2026/04/22 16:28:22.450440 rcu.event.decoded room=Demo 101 event=door_alarm state=on
+2026/04/22 16:28:23.109250 rcu.disconnect room=Demo 101
+2026/04/22 16:28:24.155630 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:24.160886 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:28:24.295860 rcu.refresh.core_state room=Demo 101 occupied=false doorOpen=true hasDoorAlarm=true dnd=false mur=0 laundry=true
+2026/04/22 16:28:24.296194 rcu.op.exec room=Demo 101 kind=refresh_misc priority=normal timeoutMs=3000 metadata=refresh_dali_line_status
+2026/04/22 16:28:24.303587 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=1
+2026/04/22 16:28:24.333703 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=2
+2026/04/22 16:28:24.375569 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=3
+2026/04/22 16:28:24.410270 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=4
+2026/04/22 16:28:24.449714 rcu.refresh.budget room=Demo 101 processed=4 remaining=27 outcome=partial
+2026/04/22 16:28:24.449972 rcu.refresh.outcome room=Demo 101 outcome=partial
+2026/04/22 16:28:24.450094 rcu.initialize_and_update.duration durationMs=294 room=Demo 101 success=true refreshOutcome=partial
+2026/04/22 16:28:24.452066 room.stream.snapshot.duration durationMs=296 room=Demo 101
+2026/04/22 16:28:26.103184 rcu.disconnect room=Demo 101
+2026/04/22 16:28:26.155345 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:26.157428 rcu.connect.backoff room=Demo 101 delayMs=270 reason=dial tcp 192.168.1.114:5556: connect: connection refused failCount=1
+2026/04/22 16:28:26.157693 rcu.refresh failed room=Demo 101 host=192.168.1.114 port=5556 error=dial tcp 192.168.1.114:5556: connect: connection refused
+2026/04/22 16:28:26.157839 snapshot.fallback.cache room=Demo 101
+2026/04/22 16:28:28.155793 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:28.160461 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:28:28.257139 rcu.refresh.core_state room=Demo 101 occupied=false doorOpen=true hasDoorAlarm=true dnd=false mur=0 laundry=true
+2026/04/22 16:28:28.257485 rcu.op.exec room=Demo 101 kind=refresh_misc priority=normal timeoutMs=3000 metadata=refresh_dali_line_status
+2026/04/22 16:28:28.267090 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=5
+2026/04/22 16:28:28.306690 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=6
+2026/04/22 16:28:28.339703 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=7
+2026/04/22 16:28:28.380828 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=8
+2026/04/22 16:28:28.416786 rcu.refresh.budget room=Demo 101 processed=4 remaining=27 outcome=partial
+2026/04/22 16:28:28.417037 rcu.refresh.outcome room=Demo 101 outcome=partial
+2026/04/22 16:28:28.417205 rcu.initialize_and_update.duration durationMs=261 room=Demo 101 success=true refreshOutcome=partial
+2026/04/22 16:28:28.419041 room.stream.snapshot.duration durationMs=263 room=Demo 101
+2026/04/22 16:28:29.110073 rcu.disconnect room=Demo 101
+2026/04/22 16:28:30.155353 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:30.161037 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:28:30.245119 rcu.refresh.core_state room=Demo 101 occupied=false doorOpen=true hasDoorAlarm=true dnd=false mur=0 laundry=true
+2026/04/22 16:28:30.245456 rcu.op.exec room=Demo 101 kind=refresh_misc priority=normal timeoutMs=3000 metadata=refresh_dali_line_status
+2026/04/22 16:28:30.248988 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=9
+2026/04/22 16:28:30.291122 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=10
+2026/04/22 16:28:30.335187 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=11
+2026/04/22 16:28:30.364094 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=12
+2026/04/22 16:28:30.407459 rcu.refresh.budget room=Demo 101 processed=4 remaining=27 outcome=partial
+2026/04/22 16:28:30.407758 rcu.refresh.outcome room=Demo 101 outcome=partial
+2026/04/22 16:28:30.407890 rcu.initialize_and_update.duration durationMs=252 room=Demo 101 success=true refreshOutcome=partial
+2026/04/22 16:28:30.409664 room.stream.snapshot.duration durationMs=254 room=Demo 101
+2026/04/22 16:28:32.105243 rcu.disconnect room=Demo 101
+2026/04/22 16:28:32.155400 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:32.157401 rcu.connect.backoff room=Demo 101 delayMs=175 reason=dial tcp 192.168.1.114:5556: connect: connection refused failCount=1
+2026/04/22 16:28:32.157703 rcu.refresh failed room=Demo 101 host=192.168.1.114 port=5556 error=dial tcp 192.168.1.114:5556: connect: connection refused
+2026/04/22 16:28:32.157971 snapshot.fallback.cache room=Demo 101
+2026/04/22 16:28:34.155799 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:34.161140 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:28:34.194900 rcu.refresh.core_state room=Demo 101 occupied=false doorOpen=true hasDoorAlarm=true dnd=false mur=0 laundry=true
+2026/04/22 16:28:34.195198 rcu.op.exec room=Demo 101 kind=refresh_misc priority=normal timeoutMs=3000 metadata=refresh_dali_line_status
+2026/04/22 16:28:34.209231 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=13
+2026/04/22 16:28:34.259091 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=14
+2026/04/22 16:28:34.290672 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=15
+2026/04/22 16:28:34.327817 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=16
+2026/04/22 16:28:34.360733 rcu.refresh.budget room=Demo 101 processed=4 remaining=27 outcome=partial
+2026/04/22 16:28:34.361359 rcu.refresh.outcome room=Demo 101 outcome=partial
+2026/04/22 16:28:34.361505 rcu.initialize_and_update.duration durationMs=205 room=Demo 101 success=true refreshOutcome=partial
+2026/04/22 16:28:34.363602 room.stream.snapshot.duration durationMs=207 room=Demo 101
+2026/04/22 16:28:35.103639 rcu.disconnect room=Demo 101
+2026/04/22 16:28:36.155810 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:36.162794 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:28:36.235616 rcu.refresh.core_state room=Demo 101 occupied=false doorOpen=true hasDoorAlarm=true dnd=false mur=0 laundry=true
+2026/04/22 16:28:36.235895 rcu.op.exec room=Demo 101 kind=refresh_misc priority=normal timeoutMs=3000 metadata=refresh_dali_line_status
+2026/04/22 16:28:36.239867 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=17
+2026/04/22 16:28:36.277038 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=18
+2026/04/22 16:28:36.320526 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=77
+2026/04/22 16:28:36.337237 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=78
+2026/04/22 16:28:36.359930 rcu.refresh.budget room=Demo 101 processed=4 remaining=27 outcome=partial
+2026/04/22 16:28:36.360175 rcu.refresh.outcome room=Demo 101 outcome=partial
+2026/04/22 16:28:36.360227 rcu.initialize_and_update.duration durationMs=204 room=Demo 101 success=true refreshOutcome=partial
+2026/04/22 16:28:36.361960 room.stream.snapshot.duration durationMs=206 room=Demo 101
+2026/04/22 16:28:38.101827 rcu.disconnect room=Demo 101
+2026/04/22 16:28:38.155916 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:38.157793 rcu.connect.backoff room=Demo 101 delayMs=231 reason=dial tcp 192.168.1.114:5556: connect: connection refused failCount=1
+2026/04/22 16:28:38.158452 rcu.refresh failed room=Demo 101 host=192.168.1.114 port=5556 error=dial tcp 192.168.1.114:5556: connect: connection refused
+2026/04/22 16:28:38.158679 snapshot.fallback.cache room=Demo 101
+2026/04/22 16:28:40.155111 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:40.160952 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:28:40.191314 rcu.refresh.core_state room=Demo 101 occupied=false doorOpen=true hasDoorAlarm=true dnd=false mur=0 laundry=true
+2026/04/22 16:28:40.191718 rcu.op.exec room=Demo 101 kind=refresh_misc priority=normal timeoutMs=3000 metadata=refresh_dali_line_status
+2026/04/22 16:28:40.195733 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=79
+2026/04/22 16:28:40.220907 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=80
+2026/04/22 16:28:40.238566 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=81
+2026/04/22 16:28:40.268909 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=82
+2026/04/22 16:28:40.309346 rcu.refresh.budget room=Demo 101 processed=4 remaining=27 outcome=partial
+2026/04/22 16:28:40.309597 rcu.refresh.outcome room=Demo 101 outcome=partial
+2026/04/22 16:28:41.105585 rcu.disconnect room=Demo 101
+2026/04/22 16:28:42.155762 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:42.161044 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:28:42.172731 rcu.refresh.core_state room=Demo 101 occupied=false doorOpen=true hasDoorAlarm=true dnd=false mur=0 laundry=true
+2026/04/22 16:28:42.173078 rcu.op.exec room=Demo 101 kind=refresh_misc priority=normal timeoutMs=3000 metadata=refresh_dali_line_status
+2026/04/22 16:28:42.177925 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=83
+2026/04/22 16:28:42.196651 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=84
+2026/04/22 16:28:42.215276 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=85
+2026/04/22 16:28:42.239256 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=86
+2026/04/22 16:28:42.259451 rcu.refresh.budget room=Demo 101 processed=4 remaining=27 outcome=partial
+2026/04/22 16:28:42.259765 rcu.refresh.outcome room=Demo 101 outcome=partial
+2026/04/22 16:28:44.105196 rcu.disconnect room=Demo 101
+2026/04/22 16:28:44.155418 rcu.op.exec room=Demo 101 kind=refresh_core priority=normal timeoutMs=1200 metadata=refresh_core
+2026/04/22 16:28:44.157297 rcu.connect room=Demo 101 host=192.168.1.114 port=5556
+2026/04/22 16:28:44.653797 rcu.refresh.core_state room=Demo 101 occupied=false doorOpen=true hasDoorAlarm=true dnd=false mur=0 laundry=true
+2026/04/22 16:28:44.654407 rcu.op.exec room=Demo 101 kind=refresh_misc priority=normal timeoutMs=3000 metadata=refresh_dali_line_status
+2026/04/22 16:28:44.660599 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=87
+2026/04/22 16:28:44.683004 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=88
+2026/04/22 16:28:44.708446 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=0
+2026/04/22 16:28:44.734304 DEBUG rcu.dali.masthead parsed room=Demo 101 address=0 situation=1 alarm=false payloadLen=24
+2026/04/22 16:28:44.734885 rcu.op.exec room=Demo 101 kind=refresh_output priority=normal timeoutMs=900 metadata=address=1
+2026/04/22 16:28:44.778358 DEBUG rcu.dali.masthead parsed room=Demo 101 address=1 situation=1 alarm=false payloadLen=24
+2026/04/22 16:28:44.778660 rcu.refresh.budget room=Demo 101 processed=4 remaining=27 outcome=partial
+2026/04/22 16:28:44.778797 rcu.refresh.outcome room=Demo 101 outcome=partial
+2026/04/22 16:28:44.778905 rcu.initialize_and_update.duration durationMs=623 room=Demo 101 success=true refreshOutcome=partial
+2026/04/22 16:28:44.780899 room.stream.snapshot.duration durationMs=625 room=Demo 101

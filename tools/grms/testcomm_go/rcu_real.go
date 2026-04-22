@@ -2093,12 +2093,17 @@ func (r *realRcuClient) ensureConnectedWithTimeoutLocked(timeout time.Duration) 
 func (r *realRcuClient) closeConnLocked() {
 	if r.conn != nil {
 		conn := r.conn
+		readerErr := r.pollReaderErrorLocked()
 		r.conn = nil
 		r.readerReplyCh = nil
 		r.readerDeferredCh = nil
 		r.readerErrCh = nil
 		_ = conn.Close()
-		log.Printf("rcu.disconnect room=%s", r.room)
+		if readerErr != nil {
+			log.Printf("rcu.disconnect room=%s reason=%v", r.room, readerErr)
+		} else {
+			log.Printf("rcu.disconnect room=%s", r.room)
+		}
 	}
 }
 
@@ -2134,8 +2139,10 @@ func (r *realRcuClient) readerLoop(
 		frame, err := readFrame(conn)
 		if err != nil {
 			if isClosedConnError(err) {
+				log.Printf("rcu.reader.exit room=%s reason=closed_conn error=%v", r.room, err)
 				return
 			}
+			log.Printf("rcu.reader.error room=%s error=%v", r.room, err)
 			select {
 			case errCh <- err:
 			default:
