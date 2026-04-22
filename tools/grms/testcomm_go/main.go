@@ -37,6 +37,7 @@ type TestCommServer struct {
 	coordinatesStore CoordinatesService
 	demoRcuStore     *DemoRcuConfigStore
 	serviceStore     ServiceEventsStore
+	simulatorEnabled bool
 
 	// Room configuration and per-room clients (mirrors Java roomConfigs/roomClients flow).
 	roomConfigs   map[string]RcuConfig
@@ -63,11 +64,13 @@ type cachedRoomSnapshot struct {
 
 func NewTestCommServer(cfg ServerConfig) *TestCommServer {
 	demoRcuStore := NewDemoRcuConfigStore()
+	simulatorEnabled := simulatorModeEnabled()
 	s := &TestCommServer{
 		cfg:              cfg,
 		coordinatesStore: NewCoordinatesStore(),
 		demoRcuStore:     demoRcuStore,
 		serviceStore:     NewServiceEventStore(cfg.DBPath),
+		simulatorEnabled: simulatorEnabled,
 		roomStreams:      make(map[string][]*sseClient),
 		roomPollers:      make(map[string]chan struct{}),
 		coordSockets:     make(map[*websocket.Conn]struct{}),
@@ -77,7 +80,13 @@ func NewTestCommServer(cfg ServerConfig) *TestCommServer {
 		snapshotCache:    make(map[string]cachedRoomSnapshot),
 	}
 
-	s.roomConfigs["Demo 101"] = demoRcuStore.Load()
+	if simulatorEnabled {
+		for _, room := range simulatorRoomsFromEnv() {
+			s.roomConfigs[room] = demoRcuStore.Load()
+		}
+	} else {
+		s.roomConfigs["Demo 101"] = demoRcuStore.Load()
+	}
 
 	return s
 }
@@ -152,9 +161,18 @@ func (s *TestCommServer) getOrCreateRcu(room string) RcuClient {
 		return nil
 	}
 
-	client := newRealRcuClient(room, cfg)
+	var client RcuClient
+	if s.simulatorEnabled {
+		client = newSimulatorRcuClient(room)
+	} else {
+		client = newRealRcuClient(room, cfg)
+	}
 	s.roomClients[room] = client
-	log.Printf("rcu.client.created room=%s host=%s port=%d", room, cfg.Host, cfg.Port)
+	source := "live"
+	if s.simulatorEnabled {
+		source = "simulator"
+	}
+	log.Printf("rcu.client.created room=%s host=%s port=%d source=%s", room, cfg.Host, cfg.Port, source)
 	return client
 }
 
@@ -2393,7 +2411,38 @@ func main() {
 		Port:    port,
 		WebRoot: webRoot,
 	})
+	log.Printf("startup.simulator_enabled=%t", simulatorModeEnabled())
 	if err := server.Start(); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
+}
+
+func simulatorModeEnabled() bool {
+	raw := strings.TrimSpace(os.Getenv("TESTCOMM_SIMULATOR_ENABLED"))
+	return raw == "1" || strings.EqualFold(raw, "true")
+}
+
+func simulatorRoomsFromEnv() []string {
+	raw := strings.TrimSpace(os.Getenv("TESTCOMM_SIMULATOR_ROOMS"))
+	if raw == "" {
+		return []string{"Demo 101", "Demo 102", "Demo 103", "Demo 104"}
+	}
+	parts := strings.Split(raw, ",")
+	rooms := make([]string, 0, len(parts))
+	seen := make(map[string]struct{})
+	for _, part := range parts {
+		room := strings.TrimSpace(part)
+		if room == "" {
+			continue
+		}
+		if _, ok := seen[room]; ok {
+			continue
+		}
+		seen[room] = struct{}{}
+		rooms = append(rooms, room)
+	}
+	if len(rooms) == 0 {
+		return []string{"Demo 101"}
+	}
+	return rooms
 }

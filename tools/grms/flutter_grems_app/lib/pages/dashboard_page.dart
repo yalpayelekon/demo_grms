@@ -417,6 +417,7 @@ class _AlarmCategoryCard extends StatelessWidget {
   final String? imageAssetPath;
   final bool compact;
   final bool tightHeight;
+  final bool wrapLongLabel;
   final double desktopFontDelta;
 
   const _AlarmCategoryCard({
@@ -427,11 +428,14 @@ class _AlarmCategoryCard extends StatelessWidget {
     this.imageAssetPath,
     this.compact = false,
     this.tightHeight = false,
+    this.wrapLongLabel = false,
     this.desktopFontDelta = 0,
   }) : assert(icon != null || imageAssetPath != null);
 
   @override
   Widget build(BuildContext context) {
+    final shouldUseTwoLines =
+        wrapLongLabel && (label.length > 11 || label.contains(' '));
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 7 : 8,
@@ -461,7 +465,7 @@ class _AlarmCategoryCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     label,
-                    maxLines: 1,
+                    maxLines: shouldUseTwoLines ? 2 : 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: Colors.white70,
@@ -540,6 +544,7 @@ class _OccupancyPanel extends StatelessWidget {
                 imageAssetPath: _occupancyAssetForLabel(statusStat.label),
                 compact: compact,
                 tightHeight: true,
+                wrapLongLabel: true,
                 desktopFontDelta: desktopFontDelta,
               );
             }).toList(),
@@ -638,7 +643,9 @@ class _ServicePanel extends StatelessWidget {
                 desktopFontDelta: desktopFontDelta,
               ),
               _ServiceCompactCard(
-                label: 'Avg Response Time',
+                label: desktopFontDelta == 0
+                    ? 'Avg Resp. Time'
+                    : 'Avg Response Time',
                 valueText: '${stats.averageServiceRequestMinutes} min',
                 icon: Icons.timer_outlined,
                 compact: compact,
