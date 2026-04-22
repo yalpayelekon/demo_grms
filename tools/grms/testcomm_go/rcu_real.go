@@ -315,6 +315,7 @@ type realRcuClient struct {
 	readerReplyCh    chan *rcuFrame
 	readerDeferredCh chan *rcuFrame
 	readerErrCh      chan error
+	readerStopCh     chan struct{}
 
 	mu sync.RWMutex
 
@@ -2180,11 +2181,16 @@ func (r *realRcuClient) ensureConnectedWithTimeoutLocked(timeout time.Duration) 
 func (r *realRcuClient) closeConnLocked() {
 	if r.conn != nil {
 		conn := r.conn
+		stopCh := r.readerStopCh
 		readerErr := r.pollReaderErrorLocked()
 		r.conn = nil
 		r.readerReplyCh = nil
 		r.readerDeferredCh = nil
 		r.readerErrCh = nil
+		r.readerStopCh = nil
+		if stopCh != nil {
+			close(stopCh)
+		}
 		_ = conn.Close()
 		if readerErr != nil {
 			log.Printf("rcu.disconnect room=%s reason=%v", r.room, readerErr)
@@ -2198,13 +2204,14 @@ func (r *realRcuClient) ensureReaderReadyLocked() {
 	if r.conn == nil {
 		return
 	}
-	if r.readerReplyCh != nil && r.readerDeferredCh != nil && r.readerErrCh != nil {
+	if r.readerReplyCh != nil && r.readerDeferredCh != nil && r.readerErrCh != nil && r.readerStopCh != nil {
 		return
 	}
 	r.readerReplyCh = make(chan *rcuFrame, readerReplyQueueSize())
 	r.readerDeferredCh = make(chan *rcuFrame, readerDeferredQueueSize())
 	r.readerErrCh = make(chan error, 1)
-	r.startReaderLocked(r.conn, r.readerReplyCh, r.readerDeferredCh, r.readerErrCh)
+	r.readerStopCh = make(chan struct{})
+	r.startReaderLocked(r.conn, r.readerReplyCh, r.readerDeferredCh, r.readerErrCh, r.readerStopCh)
 }
 
 func (r *realRcuClient) startReaderLocked(
@@ -2212,8 +2219,9 @@ func (r *realRcuClient) startReaderLocked(
 	replyCh chan *rcuFrame,
 	deferredCh chan *rcuFrame,
 	errCh chan error,
+	stopCh chan struct{},
 ) {
-	go r.readerLoop(conn, replyCh, deferredCh, errCh)
+	go r.readerLoop(conn, replyCh, deferredCh, errCh, stopCh)
 }
 
 func (r *realRcuClient) readerLoop(
@@ -2221,12 +2229,17 @@ func (r *realRcuClient) readerLoop(
 	replyCh chan *rcuFrame,
 	deferredCh chan *rcuFrame,
 	errCh chan error,
+	stopCh chan struct{},
 ) {
 	pendingReplies := make([]*rcuFrame, 0, readerOverflowQueueSize())
 
 	for {
 		for len(pendingReplies) > 0 {
-			replyCh <- pendingReplies[0]
+			select {
+			case replyCh <- pendingReplies[0]:
+			case <-stopCh:
+				return
+			}
 			pendingReplies[0] = nil
 			pendingReplies = pendingReplies[1:]
 		}
@@ -2246,7 +2259,11 @@ func (r *realRcuClient) readerLoop(
 		if frame.CmdType == 4 {
 			r.processEvent(frame)
 			if isDeferredEventFrame(frame) {
-				deferredCh <- frame
+				select {
+				case deferredCh <- frame:
+				case <-stopCh:
+					return
+				}
 			}
 			continue
 		}
