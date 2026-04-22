@@ -1410,8 +1410,8 @@ func (r *realRcuClient) initializeLockedConn() error {
 	r.initialized = true
 	log.Printf("rcu.initialized room=%s outputs=%d", r.room, len(r.outputs))
 	r.bootstrapThermostatRegistersLockedConn()
-	// Temporary: disable periodic thermostat polling loop.
-	// r.startModbusSyncLoop()
+	// Keep HVAC communication health fresh so comError is cleared when reads recover.
+	r.startModbusSyncLoop()
 	return nil
 }
 
