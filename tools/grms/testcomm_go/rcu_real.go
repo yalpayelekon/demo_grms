@@ -2223,22 +2223,11 @@ func (r *realRcuClient) readerLoop(
 ) {
 	pendingReplies := make([]*rcuFrame, 0, readerOverflowQueueSize())
 
-	flushPendingReply := func() bool {
-		if len(pendingReplies) == 0 {
-			return false
-		}
-		select {
-		case replyCh <- pendingReplies[0]:
+	for {
+		for len(pendingReplies) > 0 {
+			replyCh <- pendingReplies[0]
 			pendingReplies[0] = nil
 			pendingReplies = pendingReplies[1:]
-			return true
-		default:
-			return false
-		}
-	}
-
-	for {
-		for flushPendingReply() {
 		}
 		frame, err := readFrame(conn)
 		if err != nil {
@@ -2256,11 +2245,7 @@ func (r *realRcuClient) readerLoop(
 		if frame.CmdType == 4 {
 			r.processEvent(frame)
 			if isDeferredEventFrame(frame) {
-				select {
-				case deferredCh <- frame:
-				default:
-					r.recordReaderDrop("deferred", frame, false)
-				}
+				deferredCh <- frame
 			}
 			continue
 		}
