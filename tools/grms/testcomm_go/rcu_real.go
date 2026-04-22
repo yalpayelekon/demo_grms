@@ -1599,7 +1599,7 @@ func (r *realRcuClient) bootstrapThermostatRegistersLockedConn() {
 func (r *realRcuClient) startModbusSyncLoop() {
 	r.syncLoopOnce.Do(func() {
 		go func() {
-			ticker := time.NewTicker(10 * time.Second)
+			ticker := time.NewTicker(3 * time.Second)
 			defer ticker.Stop()
 			for range ticker.C {
 				r.connMu.Lock()

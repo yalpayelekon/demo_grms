@@ -589,10 +589,80 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
     );
   }
 
+  void syncDoorAlarmForRoom(String roomNumber, {required bool hasDoorAlarm}) {
+    final normalizedRoom = roomNumber.trim();
+    if (normalizedRoom.isEmpty) {
+      return;
+    }
+
+    final roomLabel = normalizedRoom.toLowerCase().startsWith('room ')
+        ? normalizedRoom
+        : 'Room $normalizedRoom';
+    final alarmId = _doorAlarmId(normalizedRoom);
+    final now = DateTime.now();
+    final updated = List<AlarmData>.from(state.allAlarms);
+    final index = updated.indexWhere((alarm) => alarm.id == alarmId);
+
+    if (hasDoorAlarm) {
+      const detail = 'Door open alarm active.';
+      if (index < 0) {
+        updated.insert(
+          0,
+          AlarmData(
+            id: alarmId,
+            room: roomLabel,
+            incidentTime: _formatIncidentTime(now),
+            category: 'Open Door',
+            acknowledgement: AlarmAcknowledgement.waitingAck,
+            acknowledgementTime: '',
+            status: AlarmStatus.waitingAck,
+            details: detail,
+          ),
+        );
+      } else {
+        final existing = updated[index];
+        if (existing.status == AlarmStatus.fixed) {
+          updated[index] = existing.copyWith(
+            incidentTime: _formatIncidentTime(now),
+            acknowledgement: AlarmAcknowledgement.waitingAck,
+            acknowledgementTime: '',
+            status: AlarmStatus.waitingAck,
+            details: detail,
+          );
+        } else {
+          updated[index] = existing.copyWith(details: detail);
+        }
+      }
+    } else if (index >= 0) {
+      final existing = updated[index];
+      if (existing.status != AlarmStatus.fixed) {
+        final resolvedAt = _formatIncidentTime(now);
+        updated[index] = existing.copyWith(
+          acknowledgement: AlarmAcknowledgement.acknowledged,
+          acknowledgementTime:
+              existing.acknowledgement == AlarmAcknowledgement.waitingAck
+              ? resolvedAt
+              : existing.acknowledgementTime,
+          status: AlarmStatus.fixed,
+          details: '${existing.details} Resolved (Door alarm cleared).',
+        );
+      }
+    }
+
+    final trimmed = _trimAlarms(updated);
+    state = _applyFiltersTo(
+      trimmed,
+      state.categoryFilter,
+      state.ackFilter,
+      state.statusFilter,
+    );
+  }
+
   void syncRuntimeAlarmsForRoom(
     String roomNumber,
     List<LightingDeviceSummary> devices, {
     bool hasDaliLineShortCircuit = false,
+    bool hasDoorAlarm = false,
     HvacDetail? hvacDetail,
   }) {
     syncLightingDeviceAlarmsForRoom(
@@ -601,6 +671,7 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
       hasDaliLineShortCircuit: hasDaliLineShortCircuit,
     );
     syncHvacAlarmForRoom(roomNumber, hvacDetail);
+    syncDoorAlarmForRoom(roomNumber, hasDoorAlarm: hasDoorAlarm);
   }
 
   String _lightingRoomPrefix(String roomNumber) {
@@ -648,6 +719,14 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
       '_',
     );
     return 'hvac-error-$normalized';
+  }
+
+  String _doorAlarmId(String roomNumber) {
+    final normalized = roomNumber.trim().toLowerCase().replaceAll(
+      RegExp(r'\s+'),
+      '_',
+    );
+    return 'door-open-$normalized';
   }
 
   int? _activeHvacErrorCode(HvacDetail? hvacDetail) {

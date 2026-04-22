@@ -151,6 +151,7 @@ class RoomLightingRuntimeNotifier
           _roomNumber,
           devices,
           hasDaliLineShortCircuit: snapshot.hasDaliLineShortCircuit,
+          hasDoorAlarm: snapshot.hasDoorAlarm,
           hvacDetail: snapshot.roomData.hvacDetail,
         );
   }

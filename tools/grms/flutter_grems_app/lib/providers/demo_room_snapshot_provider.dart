@@ -385,6 +385,7 @@ class RoomSnapshotNotifier
           snapshot.roomData.number,
           devices,
           hasDaliLineShortCircuit: snapshot.hasDaliLineShortCircuit,
+          hasDoorAlarm: snapshot.hasDoorAlarm,
           hvacDetail: snapshot.roomData.hvacDetail,
         );
   }

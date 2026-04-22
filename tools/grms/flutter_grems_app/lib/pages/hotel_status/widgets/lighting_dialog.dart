@@ -191,6 +191,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
               mergedDevices,
               hasDaliLineShortCircuit:
                   runtimeSnapshot?.hasDaliLineShortCircuit ?? false,
+              hasDoorAlarm: runtimeSnapshot?.hasDoorAlarm ?? false,
               hvacDetail: runtimeSnapshot?.roomData.hvacDetail,
             );
         if (!mounted) {
@@ -238,6 +239,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
             mergedDevices,
             hasDaliLineShortCircuit:
                 runtimeSnapshot?.hasDaliLineShortCircuit ?? false,
+            hasDoorAlarm: runtimeSnapshot?.hasDoorAlarm ?? false,
             hvacDetail: runtimeSnapshot?.roomData.hvacDetail,
           );
     }
