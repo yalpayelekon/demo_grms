@@ -412,9 +412,7 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
 
     if (hasDaliLineShortCircuit) {
       activeIds.add(lineAlarmId);
-      final detail =
-          'RCU alarm source: DALI line short circuit detected. '
-          'Scope: line-level RCU fault, not a device-level pendent alarm.';
+      final detail = 'RCU alarm: DALI line short circuit detected.';
       final index = updated.indexWhere((alarm) => alarm.id == lineAlarmId);
       if (index < 0) {
         updated.insert(
@@ -496,9 +494,15 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
         continue;
       }
       final resolvedSuffix = isLineAlarm
-          ? ' Resolved automatically (DALI line short circuit cleared).'
-          : ' Resolved automatically (device alarm off).';
+          ? ' Resolved (DALI line short circuit cleared).'
+          : ' Resolved (Device alarm off).';
+      final resolvedAt = _formatIncidentTime(now);
       updated[i] = alarm.copyWith(
+        acknowledgement: AlarmAcknowledgement.acknowledged,
+        acknowledgementTime:
+            alarm.acknowledgement == AlarmAcknowledgement.waitingAck
+            ? resolvedAt
+            : alarm.acknowledgementTime,
         status: AlarmStatus.fixed,
         details: '${alarm.details}$resolvedSuffix',
       );
@@ -540,8 +544,8 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
     final deviceLabel =
         '${device.type.name.toUpperCase()} #${device.address} ($deviceName)';
     if (device.daliSituation == 3) {
-      return 'RCU alarm source: Device-level lighting gear alarm. '
-          'Difference: this device alarm is reported as pendent. '
+      return 'RCU alarm: Device-level lighting gear alarm. '
+          'This device is unreachable'
           'Device: $deviceLabel.';
     }
     final situationSuffix = device.daliSituation != null
