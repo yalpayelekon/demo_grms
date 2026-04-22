@@ -16,8 +16,6 @@ class DashboardPage extends ConsumerStatefulWidget {
 }
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
-  _DashboardViewportInfo? _viewportInfo;
-
   @override
   Widget build(BuildContext context) {
     final dashboardState = ref.watch(dashboardProvider);
@@ -27,12 +25,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final coordinatesSync = ref.watch(coordinatesSyncProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: _DashboardDebugTitle(info: _viewportInfo),
-        elevation: 0,
-        backgroundColor: Colors.transparent,
-      ),
-      extendBodyBehindAppBar: true,
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -47,7 +39,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               final viewportInfo = _DashboardViewportInfo.fromConstraints(
                 constraints,
               );
-              _syncViewportInfo(viewportInfo);
               return Padding(
                 padding: EdgeInsets.all(
                   viewportInfo.useTightTabletSpacing ? 18.0 : 24.0,
@@ -108,21 +99,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         ),
       ),
     );
-  }
-
-  void _syncViewportInfo(_DashboardViewportInfo nextInfo) {
-    if (_viewportInfo == nextInfo) {
-      return;
-    }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _viewportInfo == nextInfo) {
-        return;
-      }
-      setState(() {
-        _viewportInfo = nextInfo;
-      });
-    });
   }
 
   Widget _buildResponsiveGrid(
@@ -256,35 +232,7 @@ class _ScaledCardText extends StatelessWidget {
   }
 }
 
-class _DashboardDebugTitle extends StatelessWidget {
-  final _DashboardViewportInfo? info;
-
-  const _DashboardDebugTitle({required this.info});
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        alignment: Alignment.centerLeft,
-        child: Text(
-          info?.summaryLabel ?? 'Dashboard',
-          maxLines: 1,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _DashboardViewportInfo {
-  final double width;
-  final double height;
   final bool canUseFixedDesktopGrid;
   final bool canUseFixedTabletGrid;
   final bool useCompactCards;
@@ -292,8 +240,6 @@ class _DashboardViewportInfo {
   final bool useTightTabletSpacing;
 
   const _DashboardViewportInfo({
-    required this.width,
-    required this.height,
     required this.canUseFixedDesktopGrid,
     required this.canUseFixedTabletGrid,
     required this.useCompactCards,
@@ -307,8 +253,6 @@ class _DashboardViewportInfo {
     final canUseClassicTabletGrid = width >= 800 && height >= 600;
     final canUseShortLandscapeTabletGrid = width >= 900 && height >= 500;
     return _DashboardViewportInfo(
-      width: width,
-      height: height,
       canUseFixedDesktopGrid: width >= 1400 && height >= 760,
       canUseFixedTabletGrid:
           canUseClassicTabletGrid || canUseShortLandscapeTabletGrid,
@@ -319,60 +263,6 @@ class _DashboardViewportInfo {
   }
 
   bool get canUseFixedGrid => canUseFixedDesktopGrid || canUseFixedTabletGrid;
-
-  String get modeLabel {
-    if (canUseFixedDesktopGrid) {
-      return 'Desktop';
-    }
-    if (canUseFixedTabletGrid) {
-      return 'Tablet';
-    }
-    return 'Mobile';
-  }
-
-  String get cardDensityLabel {
-    if (useUltraCompactCards) {
-      return 'Ultra';
-    }
-    if (useCompactCards) {
-      return 'Compact';
-    }
-    return 'Regular';
-  }
-
-  String get spacingLabel => useTightTabletSpacing ? 'Tight' : 'Regular';
-
-  String get gridLabel => canUseFixedGrid ? '3x2 fixed' : 'scroll';
-
-  String get summaryLabel =>
-      '${width.toStringAsFixed(0)}x${height.toStringAsFixed(0)} | '
-      '$modeLabel | $gridLabel | $cardDensityLabel | $spacingLabel';
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) {
-      return true;
-    }
-    return other is _DashboardViewportInfo &&
-        other.width.round() == width.round() &&
-        other.height.round() == height.round() &&
-        other.canUseFixedDesktopGrid == canUseFixedDesktopGrid &&
-        other.canUseFixedTabletGrid == canUseFixedTabletGrid &&
-        other.useCompactCards == useCompactCards &&
-        other.useUltraCompactCards == useUltraCompactCards &&
-        other.useTightTabletSpacing == useTightTabletSpacing;
-  }
-
-  @override
-  int get hashCode => Object.hash(
-    width.round(),
-    height.round(),
-    canUseFixedDesktopGrid,
-    canUseFixedTabletGrid,
-    useCompactCards,
-    useUltraCompactCards,
-    useTightTabletSpacing,
-  );
 }
 
 class _GlassCard extends StatelessWidget {
