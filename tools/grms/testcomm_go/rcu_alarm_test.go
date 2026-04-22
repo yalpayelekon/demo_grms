@@ -142,6 +142,26 @@ func TestSnapshotIncludesDaliLineShortCircuitState(t *testing.T) {
 	}
 }
 
+func TestSnapshotIncludesHvacComErrorState(t *testing.T) {
+	client := newRealRcuClient("Demo 101", RcuConfig{Host: "127.0.0.1", Port: 5556})
+	client.hvac.ComError = intPtr(1)
+
+	client.mu.RLock()
+	snapshot := client.Snapshot(nil)
+	client.mu.RUnlock()
+
+	if got := snapshot["hasAlarm"]; got != true {
+		t.Fatalf("expected snapshot hasAlarm=true when hvac comError is active, got %#v", got)
+	}
+	hvac, ok := snapshot["hvacDetail"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected hvacDetail map, got %T", snapshot["hvacDetail"])
+	}
+	if got := hvac["comError"]; got != 1 {
+		t.Fatalf("expected hvacDetail.comError=1, got %#v", got)
+	}
+}
+
 func TestSnapshotIncludesCanonicalOccupancyState(t *testing.T) {
 	client := newRealRcuClient("Demo 101", RcuConfig{Host: "127.0.0.1", Port: 5556})
 	client.isRoomOccupied = false

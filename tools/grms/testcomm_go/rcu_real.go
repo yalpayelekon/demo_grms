@@ -1583,12 +1583,15 @@ func (r *realRcuClient) bootstrapThermostatRegistersLockedConn() {
 		ev, err := r.sendModbusReadAndAwaitAckLocked(reg, 1, modbusDeviceShortAddr)
 		if err != nil {
 			// log.Printf("rcu.modbus.bootstrap.read failed room=%s reg=0x%X error=%v", r.room, reg, err)
+			r.setHvacComError(1)
 			continue
 		}
 		if ev.Ack != modbusAckOK {
 			// log.Printf("rcu.modbus.bootstrap.read nack room=%s reg=0x%X ack=0x%X", r.room, reg, ev.Ack)
+			r.setHvacComError(1)
 			continue
 		}
+		r.setHvacComError(0)
 		r.applyModbusReadReturnEvent(ev)
 	}
 }
@@ -1609,13 +1612,16 @@ func (r *realRcuClient) startModbusSyncLoop() {
 					ev, err := r.sendModbusReadAndAwaitAckLocked(reg, 1, modbusDeviceShortAddr)
 					if err != nil {
 						// log.Printf("rcu.modbus.poll.read failed room=%s reg=0x%X error=%v", r.room, reg, err)
+						r.setHvacComError(1)
 						r.closeConnLocked()
 						break
 					}
 					if ev.Ack != modbusAckOK {
 						// log.Printf("rcu.modbus.poll.read nack room=%s reg=0x%X ack=0x%X", r.room, reg, ev.Ack)
+						r.setHvacComError(1)
 						continue
 					}
+					r.setHvacComError(0)
 					r.applyModbusReadReturnEvent(ev)
 				}
 				r.connMu.Unlock()
@@ -1747,6 +1753,12 @@ func (r *realRcuClient) applyModbusReadReturnEvent(ev *modbusReadReturnEvent) {
 	for i, value := range ev.Values {
 		r.applyHvacRegisterLocal(ev.StartReg+i, value)
 	}
+}
+
+func (r *realRcuClient) setHvacComError(code int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.hvac.ComError = intPtr(code)
 }
 
 func (r *realRcuClient) refreshOutputLockedConn(address int) error {
@@ -2851,6 +2863,9 @@ func (r *realRcuClient) mapStatusLocked() string {
 
 func (r *realRcuClient) mapHasAlarmLocked() bool {
 	if r.hasDoorAlarm {
+		return true
+	}
+	if r.hvac.ComError != nil && *r.hvac.ComError != 0 {
 		return true
 	}
 	if r.daliLineShortCircuit {

@@ -104,17 +104,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.withOpacity(0.1),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.apartment_rounded,
-                            size: 64,
-                            color: Colors.blue,
-                          ),
+                        Image.asset(
+                          'assets/images/vanpeelogo.png',
+                          width: 110,
+                          height: 110,
+                          fit: BoxFit.contain,
                         ),
                         const SizedBox(height: 24),
                         const Text(
