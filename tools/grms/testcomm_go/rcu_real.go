@@ -191,6 +191,43 @@ type rcuFrame struct {
 	Payload  []byte
 }
 
+type frameMatcher struct {
+	name            string
+	expectedCmdType *int
+	expectedCmdNo   *int
+	expectedSubCmd  *int
+	validate        func(*rcuFrame) (bool, string)
+}
+
+func (m *frameMatcher) match(frame *rcuFrame) (bool, string) {
+	if frame == nil {
+		return false, "nil frame"
+	}
+	if m == nil {
+		return true, ""
+	}
+	if m.expectedCmdType != nil && frame.CmdType != *m.expectedCmdType {
+		return false, fmt.Sprintf("cmdType=%d expected=%d", frame.CmdType, *m.expectedCmdType)
+	}
+	if m.expectedCmdNo != nil && frame.CmdNo != *m.expectedCmdNo {
+		return false, fmt.Sprintf("cmdNo=%d expected=%d", frame.CmdNo, *m.expectedCmdNo)
+	}
+	if m.expectedSubCmd != nil && frame.SubCmdNo != *m.expectedSubCmd {
+		return false, fmt.Sprintf("subCmdNo=%d expected=%d", frame.SubCmdNo, *m.expectedSubCmd)
+	}
+	if m.validate != nil {
+		return m.validate(frame)
+	}
+	return true, ""
+}
+
+func (m *frameMatcher) label() string {
+	if m == nil || strings.TrimSpace(m.name) == "" {
+		return "unspecified"
+	}
+	return m.name
+}
+
 type rcuEventInfo struct {
 	Name        string
 	Description string
@@ -1750,7 +1787,22 @@ func (r *realRcuClient) sendModbusReadAndAwaitAckLocked(register int, count int,
 	// log.Printf("rcu.modbus.read room=%s reg=0x%X count=%d frame_hex=% X", r.room, register, count, msg)
 
 	frame, err := r.waitForDeferredFrameLocked(5*time.Second, func(frame *rcuFrame) bool {
-		return frame.CmdNo == 7 && frame.SubCmdNo == 0
+		if frame == nil || frame.CmdNo != 7 || frame.SubCmdNo != 0 {
+			return false
+		}
+		ev, ok := parseModbusReadReturnEvent(frame.Payload)
+		if !ok {
+			log.Printf("rcu.modbus.read.ignore room=%s reason=parse_failed payload_hex=% X", r.room, frame.Payload)
+			return false
+		}
+		if ev.ShortAddr != shortAddr || ev.StartReg != register || ev.Count != count {
+			log.Printf(
+				"rcu.modbus.read.ignore room=%s reason=unexpected_target expected_short=%d got_short=%d expected_reg=0x%X got_reg=0x%X expected_count=%d got_count=%d",
+				r.room, shortAddr, ev.ShortAddr, register, ev.StartReg, count, ev.Count,
+			)
+			return false
+		}
+		return true
 	})
 	if err != nil {
 		if shouldCloseConnectionForModbusError(err) {
@@ -1758,35 +1810,12 @@ func (r *realRcuClient) sendModbusReadAndAwaitAckLocked(register int, count int,
 		}
 		return nil, err
 	}
-	for {
-		ev, ok := parseModbusReadReturnEvent(frame.Payload)
-		if !ok {
-			frame, err = r.waitForDeferredFrameLocked(5*time.Second, func(frame *rcuFrame) bool {
-				return frame.CmdNo == 7 && frame.SubCmdNo == 0
-			})
-			if err != nil {
-				if shouldCloseConnectionForModbusError(err) {
-					r.closeConnLocked()
-				}
-				return nil, err
-			}
-			continue
-		}
-		if ev.ShortAddr != shortAddr || ev.StartReg != register {
-			frame, err = r.waitForDeferredFrameLocked(5*time.Second, func(frame *rcuFrame) bool {
-				return frame.CmdNo == 7 && frame.SubCmdNo == 0
-			})
-			if err != nil {
-				if shouldCloseConnectionForModbusError(err) {
-					r.closeConnLocked()
-				}
-				return nil, err
-			}
-			continue
-		}
-		// log.Printf("rcu.modbus.read.ack room=%s short_addr=%d ack=0x%X start_reg=0x%X count=%d", r.room, ev.ShortAddr, ev.Ack, ev.StartReg, ev.Count)
-		return ev, nil
+	ev, ok := parseModbusReadReturnEvent(frame.Payload)
+	if !ok {
+		return nil, fmt.Errorf("invalid modbus read ack payload after matcher room=%s", r.room)
 	}
+	// log.Printf("rcu.modbus.read.ack room=%s short_addr=%d ack=0x%X start_reg=0x%X count=%d", r.room, ev.ShortAddr, ev.Ack, ev.StartReg, ev.Count)
+	return ev, nil
 }
 
 func (r *realRcuClient) sendModbusWriteAndAwaitAckLocked(msg []byte, shortAddr int) (*modbusWriteReturnEvent, error) {
@@ -1803,7 +1832,22 @@ func (r *realRcuClient) sendModbusWriteAndAwaitAckLocked(msg []byte, shortAddr i
 	}
 
 	frame, err := r.waitForDeferredFrameLocked(5*time.Second, func(frame *rcuFrame) bool {
-		return frame.CmdNo == 7 && frame.SubCmdNo == 1
+		if frame == nil || frame.CmdNo != 7 || frame.SubCmdNo != 1 {
+			return false
+		}
+		ev, ok := parseModbusWriteReturnEvent(frame.Payload)
+		if !ok {
+			log.Printf("rcu.modbus.write.ignore room=%s reason=parse_failed payload_hex=% X", r.room, frame.Payload)
+			return false
+		}
+		if ev.ShortAddr != shortAddr {
+			log.Printf(
+				"rcu.modbus.write.ignore room=%s reason=unexpected_short_addr expected=%d got=%d",
+				r.room, shortAddr, ev.ShortAddr,
+			)
+			return false
+		}
+		return true
 	})
 	if err != nil {
 		if shouldCloseConnectionForModbusError(err) {
@@ -1811,34 +1855,11 @@ func (r *realRcuClient) sendModbusWriteAndAwaitAckLocked(msg []byte, shortAddr i
 		}
 		return nil, err
 	}
-	for {
-		ev, ok := parseModbusWriteReturnEvent(frame.Payload)
-		if !ok {
-			frame, err = r.waitForDeferredFrameLocked(5*time.Second, func(frame *rcuFrame) bool {
-				return frame.CmdNo == 7 && frame.SubCmdNo == 1
-			})
-			if err != nil {
-				if shouldCloseConnectionForModbusError(err) {
-					r.closeConnLocked()
-				}
-				return nil, err
-			}
-			continue
-		}
-		if ev.ShortAddr != shortAddr {
-			frame, err = r.waitForDeferredFrameLocked(5*time.Second, func(frame *rcuFrame) bool {
-				return frame.CmdNo == 7 && frame.SubCmdNo == 1
-			})
-			if err != nil {
-				if shouldCloseConnectionForModbusError(err) {
-					r.closeConnLocked()
-				}
-				return nil, err
-			}
-			continue
-		}
-		return ev, nil
+	ev, ok := parseModbusWriteReturnEvent(frame.Payload)
+	if !ok {
+		return nil, fmt.Errorf("invalid modbus write ack payload after matcher room=%s", r.room)
 	}
+	return ev, nil
 }
 
 func (r *realRcuClient) applyModbusReadReturnEvent(ev *modbusReadReturnEvent) {
@@ -2334,32 +2355,63 @@ func (r *realRcuClient) pollReaderErrorLocked() error {
 }
 
 func (r *realRcuClient) discardUnexpectedInboundLocked(context string) {
-	for {
+	const maxDrains = 64
+	drained := 0
+	for drained < maxDrains {
+		drainedAny := false
 		if r.readerDeferredCh != nil {
 			select {
 			case frame := <-r.readerDeferredCh:
+				drainedAny = true
+				drained++
 				if frame != nil {
 					log.Printf(
-						"rcu.frame.discard room=%s context=%s deferred_cmdNo=%d deferred_subCmdNo=%d",
+						"rcu.frame.discard room=%s context=%s channel=deferred cmdType=%d cmdNo=%d subCmdNo=%d",
 						r.room,
 						context,
+						frame.CmdType,
 						frame.CmdNo,
 						frame.SubCmdNo,
 					)
 				}
-				continue
 			default:
-				return
 			}
 		}
-		return
+		if r.readerReplyCh != nil {
+			select {
+			case frame := <-r.readerReplyCh:
+				drainedAny = true
+				drained++
+				if frame != nil {
+					log.Printf(
+						"rcu.frame.discard room=%s context=%s channel=reply cmdType=%d cmdNo=%d subCmdNo=%d",
+						r.room,
+						context,
+						frame.CmdType,
+						frame.CmdNo,
+						frame.SubCmdNo,
+					)
+				}
+			default:
+			}
+		}
+		if !drainedAny {
+			return
+		}
 	}
+	log.Printf("rcu.frame.discard room=%s context=%s reached_limit=%d", r.room, context, maxDrains)
 }
 
 func (r *realRcuClient) waitForReplyFrameLocked(timeout time.Duration) (*rcuFrame, error) {
+	return r.waitForMatchingReplyFrameLocked(timeout, nil)
+}
+
+func (r *realRcuClient) waitForMatchingReplyFrameLocked(timeout time.Duration, matcher *frameMatcher) (*rcuFrame, error) {
 	if r.readerReplyCh == nil {
 		return nil, fmt.Errorf("reader reply channel is nil")
 	}
+	unmatched := make([]*rcuFrame, 0, 4)
+	defer r.requeueReplyFramesLocked("reply_wait_exit", unmatched)
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	for {
@@ -2371,7 +2423,20 @@ func (r *realRcuClient) waitForReplyFrameLocked(timeout time.Duration) (*rcuFram
 			if frame == nil {
 				continue
 			}
-			return frame, nil
+			if ok, reason := matcher.match(frame); ok {
+				return frame, nil
+			} else {
+				log.Printf(
+					"rcu.frame.mismatch room=%s channel=reply matcher=%s reason=%s got_cmdType=%d got_cmdNo=%d got_subCmdNo=%d",
+					r.room,
+					matcher.label(),
+					reason,
+					frame.CmdType,
+					frame.CmdNo,
+					frame.SubCmdNo,
+				)
+				unmatched = append(unmatched, frame)
+			}
 		case frame := <-r.readerDeferredCh:
 			if frame != nil {
 				log.Printf(
@@ -2384,6 +2449,7 @@ func (r *realRcuClient) waitForReplyFrameLocked(timeout time.Duration) (*rcuFram
 		case err := <-r.readerErrCh:
 			return nil, err
 		case <-timer.C:
+			r.discardUnexpectedInboundLocked("timeout_reply_wait")
 			return nil, fmt.Errorf("i/o timeout waiting for reply frame after %s", timeout)
 		}
 	}
@@ -2396,6 +2462,8 @@ func (r *realRcuClient) waitForDeferredFrameLocked(
 	if r.readerDeferredCh == nil {
 		return nil, fmt.Errorf("reader deferred channel is nil")
 	}
+	unmatched := make([]*rcuFrame, 0, 4)
+	defer r.requeueDeferredFramesLocked("deferred_wait_exit", unmatched)
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	for {
@@ -2410,6 +2478,14 @@ func (r *realRcuClient) waitForDeferredFrameLocked(
 			if matcher == nil || matcher(frame) {
 				return frame, nil
 			}
+			log.Printf(
+				"rcu.frame.mismatch room=%s channel=deferred matcher=custom got_cmdType=%d got_cmdNo=%d got_subCmdNo=%d",
+				r.room,
+				frame.CmdType,
+				frame.CmdNo,
+				frame.SubCmdNo,
+			)
+			unmatched = append(unmatched, frame)
 		case frame := <-r.readerReplyCh:
 			if frame != nil {
 				return nil, fmt.Errorf(
@@ -2422,7 +2498,48 @@ func (r *realRcuClient) waitForDeferredFrameLocked(
 		case err := <-r.readerErrCh:
 			return nil, err
 		case <-timer.C:
+			r.discardUnexpectedInboundLocked("timeout_deferred_wait")
 			return nil, fmt.Errorf("i/o timeout waiting for deferred event after %s", timeout)
+		}
+	}
+}
+
+func (r *realRcuClient) requeueReplyFramesLocked(context string, frames []*rcuFrame) {
+	for _, frame := range frames {
+		if frame == nil || r.readerReplyCh == nil {
+			continue
+		}
+		select {
+		case r.readerReplyCh <- frame:
+			log.Printf(
+				"rcu.frame.requeue room=%s context=%s channel=reply cmdType=%d cmdNo=%d subCmdNo=%d",
+				r.room, context, frame.CmdType, frame.CmdNo, frame.SubCmdNo,
+			)
+		default:
+			log.Printf(
+				"rcu.frame.requeue_drop room=%s context=%s channel=reply cmdType=%d cmdNo=%d subCmdNo=%d",
+				r.room, context, frame.CmdType, frame.CmdNo, frame.SubCmdNo,
+			)
+		}
+	}
+}
+
+func (r *realRcuClient) requeueDeferredFramesLocked(context string, frames []*rcuFrame) {
+	for _, frame := range frames {
+		if frame == nil || r.readerDeferredCh == nil {
+			continue
+		}
+		select {
+		case r.readerDeferredCh <- frame:
+			log.Printf(
+				"rcu.frame.requeue room=%s context=%s channel=deferred cmdType=%d cmdNo=%d subCmdNo=%d",
+				r.room, context, frame.CmdType, frame.CmdNo, frame.SubCmdNo,
+			)
+		default:
+			log.Printf(
+				"rcu.frame.requeue_drop room=%s context=%s channel=deferred cmdType=%d cmdNo=%d subCmdNo=%d",
+				r.room, context, frame.CmdType, frame.CmdNo, frame.SubCmdNo,
+			)
 		}
 	}
 }
@@ -2439,6 +2556,14 @@ func (r *realRcuClient) sendRequestLocked(msg []byte) (*rcuFrame, error) {
 }
 
 func (r *realRcuClient) sendRequestLockedWithTimeout(msg []byte, timeout time.Duration) (*rcuFrame, error) {
+	return r.sendRequestLockedWithTimeoutAndMatcher(msg, timeout, matcherFromRequest(msg, "request_reply"))
+}
+
+func (r *realRcuClient) sendRequestLockedWithTimeoutAndMatcher(
+	msg []byte,
+	timeout time.Duration,
+	matcher *frameMatcher,
+) (*rcuFrame, error) {
 	if r.conn == nil {
 		return nil, fmt.Errorf("rcu connection is nil")
 	}
@@ -2456,7 +2581,7 @@ func (r *realRcuClient) sendRequestLockedWithTimeout(msg []byte, timeout time.Du
 	if _, err := r.conn.Write(msg); err != nil {
 		return nil, err
 	}
-	frame, err := r.waitForReplyFrameLocked(timeout)
+	frame, err := r.waitForMatchingReplyFrameLocked(timeout, matcher)
 	if err != nil {
 		if shouldCloseConnectionForRequestError(err) {
 			r.closeConnLocked()
@@ -2464,6 +2589,21 @@ func (r *realRcuClient) sendRequestLockedWithTimeout(msg []byte, timeout time.Du
 		return nil, err
 	}
 	return frame, nil
+}
+
+func matcherFromRequest(msg []byte, name string) *frameMatcher {
+	if len(msg) < 6 {
+		return nil
+	}
+	cmdType := int(msg[1])
+	cmdNo := int(msg[4])
+	subCmdNo := int(msg[5])
+	return &frameMatcher{
+		name:            name,
+		expectedCmdType: &cmdType,
+		expectedCmdNo:   &cmdNo,
+		expectedSubCmd:  &subCmdNo,
+	}
 }
 
 func (r *realRcuClient) sendCommandNoResponseLocked(msg []byte) error {
