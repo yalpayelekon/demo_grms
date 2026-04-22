@@ -2348,7 +2348,9 @@ func (r *realRcuClient) sendRequestLockedWithTimeout(msg []byte, timeout time.Du
 	}
 	frame, err := r.waitForReplyFrameLocked(timeout)
 	if err != nil {
-		r.closeConnLocked()
+		if shouldCloseConnectionForRequestError(err) {
+			r.closeConnLocked()
+		}
 		return nil, err
 	}
 	return frame, nil
@@ -3341,6 +3343,13 @@ func neverCloseConnection() bool {
 }
 
 func shouldCloseConnectionForModbusError(err error) bool {
+	if neverCloseConnection() {
+		return false
+	}
+	return !isTimeoutError(err)
+}
+
+func shouldCloseConnectionForRequestError(err error) bool {
 	if neverCloseConnection() {
 		return false
 	}
