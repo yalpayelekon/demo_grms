@@ -386,6 +386,8 @@ class RoomSnapshotNotifier
           devices,
           hasDaliLineShortCircuit: snapshot.hasDaliLineShortCircuit,
           hasDoorAlarm: snapshot.hasDoorAlarm,
+          isDoorOpen: snapshot.roomData.occupancy?.doorOpen ?? false,
+          serviceEvents: snapshot.serviceEvents,
           hvacDetail: snapshot.roomData.hvacDetail,
         );
   }

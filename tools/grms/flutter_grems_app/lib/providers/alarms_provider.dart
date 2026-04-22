@@ -46,6 +46,7 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
   static const Duration _alarmGenerationInterval = Duration(seconds: 90);
   static const Duration _alarmProgressionInterval = Duration(minutes: 3);
   static const int _maxAlarmEntries = 200;
+  static const Duration _doorOpenAlarmThreshold = Duration(seconds: 5);
   static const List<String> _alarmCategories = <String>[
     'Long Inact.',
     'Open Door',
@@ -59,6 +60,8 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
   Timer? _alarmGeneratorTimer;
   Timer? _alarmProgressionTimer;
   int _sequence = 1000;
+  final Map<String, DateTime> _doorOpenSinceByRoom = <String, DateTime>{};
+  final Map<String, bool> _doorAlarmEventStateByRoom = <String, bool>{};
 
   @override
   AlarmsState build() {
@@ -589,7 +592,12 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
     );
   }
 
-  void syncDoorAlarmForRoom(String roomNumber, {required bool hasDoorAlarm}) {
+  void syncDoorAlarmForRoom(
+    String roomNumber, {
+    required bool hasDoorAlarm,
+    required bool isDoorOpen,
+    List<Map<String, dynamic>> serviceEvents = const <Map<String, dynamic>>[],
+  }) {
     final normalizedRoom = roomNumber.trim();
     if (normalizedRoom.isEmpty) {
       return;
@@ -602,9 +610,32 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
     final now = DateTime.now();
     final updated = List<AlarmData>.from(state.allAlarms);
     final index = updated.indexWhere((alarm) => alarm.id == alarmId);
+    final eventDoorAlarmState = _latestDoorAlarmEventState(serviceEvents);
+    if (eventDoorAlarmState != null) {
+      _doorAlarmEventStateByRoom[normalizedRoom] = eventDoorAlarmState;
+    }
 
-    if (hasDoorAlarm) {
-      const detail = 'Door open alarm active.';
+    if (isDoorOpen) {
+      _doorOpenSinceByRoom.putIfAbsent(normalizedRoom, () => now);
+    } else {
+      _doorOpenSinceByRoom.remove(normalizedRoom);
+    }
+
+    final openedAt = _doorOpenSinceByRoom[normalizedRoom];
+    final durationDoorAlarm =
+        isDoorOpen &&
+        openedAt != null &&
+        now.difference(openedAt) >= _doorOpenAlarmThreshold;
+    final eventDoorAlarm = _doorAlarmEventStateByRoom[normalizedRoom] ?? false;
+    final effectiveDoorAlarm =
+        hasDoorAlarm || eventDoorAlarm || durationDoorAlarm;
+
+    if (effectiveDoorAlarm) {
+      final detail = eventDoorAlarm
+          ? 'Door open alarm active (RCU occupancy event).'
+          : (durationDoorAlarm
+                ? 'Door remained open for at least 10 seconds.'
+                : 'Door open alarm active.');
       if (index < 0) {
         updated.insert(
           0,
@@ -663,6 +694,8 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
     List<LightingDeviceSummary> devices, {
     bool hasDaliLineShortCircuit = false,
     bool hasDoorAlarm = false,
+    bool isDoorOpen = false,
+    List<Map<String, dynamic>> serviceEvents = const <Map<String, dynamic>>[],
     HvacDetail? hvacDetail,
   }) {
     syncLightingDeviceAlarmsForRoom(
@@ -671,7 +704,12 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
       hasDaliLineShortCircuit: hasDaliLineShortCircuit,
     );
     syncHvacAlarmForRoom(roomNumber, hvacDetail);
-    syncDoorAlarmForRoom(roomNumber, hasDoorAlarm: hasDoorAlarm);
+    syncDoorAlarmForRoom(
+      roomNumber,
+      hasDoorAlarm: hasDoorAlarm,
+      isDoorOpen: isDoorOpen,
+      serviceEvents: serviceEvents,
+    );
   }
 
   String _lightingRoomPrefix(String roomNumber) {
@@ -742,6 +780,63 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
       return 'HVAC communication lost.';
     }
     return 'HVAC Modbus/register error detected (code: $code).';
+  }
+
+  bool? _latestDoorAlarmEventState(List<Map<String, dynamic>> events) {
+    var bestTimestamp = -1;
+    bool? bestState;
+
+    for (final event in events) {
+      final eventTypeRaw =
+          (event['eventType'] ?? event['event_type']) as String?;
+      if (eventTypeRaw == null) {
+        continue;
+      }
+      final state = _doorAlarmStateFromEventType(eventTypeRaw);
+      if (state == null) {
+        continue;
+      }
+      final timestamp = _toInt(event['timestamp']);
+      if (timestamp > bestTimestamp) {
+        bestTimestamp = timestamp;
+        bestState = state;
+        continue;
+      }
+      if (bestState == null && timestamp <= 0) {
+        bestState = state;
+      }
+    }
+
+    return bestState;
+  }
+
+  bool? _doorAlarmStateFromEventType(String eventType) {
+    final normalized = eventType.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return null;
+    }
+    if (normalized.contains('open_door_alarm_deleted') ||
+        normalized.contains('door_open_alarm_deleted')) {
+      return false;
+    }
+    if (normalized.contains('open_door_alarm') ||
+        normalized.contains('door_open_alarm')) {
+      return true;
+    }
+    return null;
+  }
+
+  int _toInt(Object? value) {
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    if (value is String) {
+      return int.tryParse(value) ?? -1;
+    }
+    return -1;
   }
 
   @visibleForTesting
