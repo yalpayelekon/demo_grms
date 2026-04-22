@@ -71,8 +71,34 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/images/
-    - assets/images/room_status/
+    - assets/images/floor_with_rooms.png
+    - assets/images/johnsonControl.png
+    - assets/images/room_layout_web.png
+    - assets/images/serenity_hotel_view.png
+    - assets/images/vanpeelogo.png
+    - assets/images/zone_preview.png
+    - assets/images/room_status/dnd.png
+    - assets/images/room_status/dndyellow.png
+    - assets/images/room_status/greenadamvaliz.png
+    - assets/images/room_status/greenhousekeeping.png
+    - assets/images/room_status/greenvaliz.png
+    - assets/images/room_status/HvacActive.png
+    - assets/images/room_status/HvacActiveCold.png
+    - assets/images/room_status/HvacActiveHot.png
+    - assets/images/room_status/LightingOff.png
+    - assets/images/room_status/LightingOn.png
+    - assets/images/room_status/lnd.png
+    - assets/images/room_status/lndDelayed.png
+    - assets/images/room_status/lndyellow.png
+    - assets/images/room_status/mur.png
+    - assets/images/room_status/murDelayed.png
+    - assets/images/room_status/muryellow.png
+    - assets/images/room_status/onlyRed.png
+    - assets/images/room_status/redadamvaliz.png
+    - assets/images/room_status/redhousekeeping.png
+    - assets/images/room_status/redvaliz.png
+    - assets/images/room_status/white.png
+    - assets/images/room_status/whitehousekeeping.png
     - assets/json/
 
   fonts:
