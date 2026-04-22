@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import '../models/alarm_models.dart';
 import '../models/lighting_device.dart';
+import '../models/room_models.dart';
 import 'zones_provider.dart';
 
 class AlarmsState {
@@ -409,6 +410,7 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
     final activeDevices = devices.where((d) => d.alarm).toList(growable: false);
     final activeIds = <String>{};
     final updated = List<AlarmData>.from(state.allAlarms);
+    const category = 'Lighting';
 
     if (hasDaliLineShortCircuit) {
       activeIds.add(lineAlarmId);
@@ -421,7 +423,7 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
             id: lineAlarmId,
             room: roomLabel,
             incidentTime: _formatIncidentTime(now),
-            category: 'RCU',
+            category: category,
             acknowledgement: AlarmAcknowledgement.waitingAck,
             acknowledgementTime: '',
             status: AlarmStatus.waitingAck,
@@ -457,7 +459,7 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
             id: alarmId,
             room: roomLabel,
             incidentTime: _formatIncidentTime(now),
-            category: 'RCU',
+            category: category,
             acknowledgement: AlarmAcknowledgement.waitingAck,
             acknowledgementTime: '',
             status: AlarmStatus.waitingAck,
@@ -484,8 +486,8 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
     for (var i = 0; i < updated.length; i++) {
       final alarm = updated[i];
       final isLightingDeviceAlarm =
-          alarm.category == 'RCU' && alarm.id.startsWith(roomPrefix);
-      final isLineAlarm = alarm.category == 'RCU' && alarm.id == lineAlarmId;
+          alarm.category == category && alarm.id.startsWith(roomPrefix);
+      final isLineAlarm = alarm.category == category && alarm.id == lineAlarmId;
       if (!isLightingDeviceAlarm && !isLineAlarm) {
         continue;
       }
@@ -515,6 +517,90 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
       state.ackFilter,
       state.statusFilter,
     );
+  }
+
+  void syncHvacAlarmForRoom(String roomNumber, HvacDetail? hvacDetail) {
+    final normalizedRoom = roomNumber.trim();
+    if (normalizedRoom.isEmpty) {
+      return;
+    }
+
+    final roomLabel = normalizedRoom.toLowerCase().startsWith('room ')
+        ? normalizedRoom
+        : 'Room $normalizedRoom';
+    final alarmId = _hvacAlarmId(normalizedRoom);
+    final now = DateTime.now();
+    final activeErrorCode = _activeHvacErrorCode(hvacDetail);
+    final updated = List<AlarmData>.from(state.allAlarms);
+    final index = updated.indexWhere((alarm) => alarm.id == alarmId);
+
+    if (activeErrorCode != null) {
+      final detail = _hvacAlarmDetail(activeErrorCode);
+      if (index < 0) {
+        updated.insert(
+          0,
+          AlarmData(
+            id: alarmId,
+            room: roomLabel,
+            incidentTime: _formatIncidentTime(now),
+            category: 'HVAC',
+            acknowledgement: AlarmAcknowledgement.waitingAck,
+            acknowledgementTime: '',
+            status: AlarmStatus.waitingAck,
+            details: detail,
+          ),
+        );
+      } else {
+        final existing = updated[index];
+        if (existing.status == AlarmStatus.fixed) {
+          updated[index] = existing.copyWith(
+            incidentTime: _formatIncidentTime(now),
+            acknowledgement: AlarmAcknowledgement.waitingAck,
+            acknowledgementTime: '',
+            status: AlarmStatus.waitingAck,
+            details: detail,
+          );
+        } else {
+          updated[index] = existing.copyWith(details: detail);
+        }
+      }
+    } else if (index >= 0) {
+      final existing = updated[index];
+      if (existing.status != AlarmStatus.fixed) {
+        final resolvedAt = _formatIncidentTime(now);
+        updated[index] = existing.copyWith(
+          acknowledgement: AlarmAcknowledgement.acknowledged,
+          acknowledgementTime:
+              existing.acknowledgement == AlarmAcknowledgement.waitingAck
+              ? resolvedAt
+              : existing.acknowledgementTime,
+          status: AlarmStatus.fixed,
+          details: '${existing.details} Resolved (HVAC error cleared).',
+        );
+      }
+    }
+
+    final trimmed = _trimAlarms(updated);
+    state = _applyFiltersTo(
+      trimmed,
+      state.categoryFilter,
+      state.ackFilter,
+      state.statusFilter,
+    );
+  }
+
+  void syncRuntimeAlarmsForRoom(
+    String roomNumber,
+    List<LightingDeviceSummary> devices, {
+    bool hasDaliLineShortCircuit = false,
+    HvacDetail? hvacDetail,
+  }) {
+    syncLightingDeviceAlarmsForRoom(
+      roomNumber,
+      devices,
+      hasDaliLineShortCircuit: hasDaliLineShortCircuit,
+    );
+    syncHvacAlarmForRoom(roomNumber, hvacDetail);
   }
 
   String _lightingRoomPrefix(String roomNumber) {
@@ -554,6 +640,29 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
     return 'RCU alarm source: Device-level lighting gear alarm. '
         'Difference: this is not a line short circuit; device-level fault state '
         'is active$situationSuffix. Device: $deviceLabel.';
+  }
+
+  String _hvacAlarmId(String roomNumber) {
+    final normalized = roomNumber.trim().toLowerCase().replaceAll(
+      RegExp(r'\s+'),
+      '_',
+    );
+    return 'hvac-error-$normalized';
+  }
+
+  int? _activeHvacErrorCode(HvacDetail? hvacDetail) {
+    final code = hvacDetail?.comError;
+    if (code == null || code == 0) {
+      return null;
+    }
+    return code;
+  }
+
+  String _hvacAlarmDetail(int code) {
+    if (code == 1) {
+      return 'HVAC communication lost.';
+    }
+    return 'HVAC Modbus/register error detected (code: $code).';
   }
 
   @visibleForTesting

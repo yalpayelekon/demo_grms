@@ -186,11 +186,12 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
         );
         ref
             .read(alarmsProvider.notifier)
-            .syncLightingDeviceAlarmsForRoom(
+            .syncRuntimeAlarmsForRoom(
               widget.room.number,
               mergedDevices,
               hasDaliLineShortCircuit:
                   runtimeSnapshot?.hasDaliLineShortCircuit ?? false,
+              hvacDetail: runtimeSnapshot?.roomData.hvacDetail,
             );
         if (!mounted) {
           return;
@@ -232,11 +233,12 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
       );
       ref
           .read(alarmsProvider.notifier)
-          .syncLightingDeviceAlarmsForRoom(
+          .syncRuntimeAlarmsForRoom(
             widget.room.number,
             mergedDevices,
             hasDaliLineShortCircuit:
                 runtimeSnapshot?.hasDaliLineShortCircuit ?? false,
+            hvacDetail: runtimeSnapshot?.roomData.hvacDetail,
           );
     }
   }

@@ -147,10 +147,11 @@ class RoomLightingRuntimeNotifier
     ];
     ref
         .read(alarmsProvider.notifier)
-        .syncLightingDeviceAlarmsForRoom(
+        .syncRuntimeAlarmsForRoom(
           _roomNumber,
           devices,
           hasDaliLineShortCircuit: snapshot.hasDaliLineShortCircuit,
+          hvacDetail: snapshot.roomData.hvacDetail,
         );
   }
 
@@ -609,6 +610,9 @@ bool _computeEffectiveRoomAlarm(
   if (snapshot.hasDoorAlarm) {
     return true;
   }
+  if (_hasHvacAlarm(snapshot.roomData.hvacDetail)) {
+    return true;
+  }
   if (snapshot.hasDaliLineShortCircuit) {
     return true;
   }
@@ -616,6 +620,11 @@ bool _computeEffectiveRoomAlarm(
     return true;
   }
   return false;
+}
+
+bool _hasHvacAlarm(HvacDetail? hvacDetail) {
+  final code = hvacDetail?.comError;
+  return code != null && code != 0;
 }
 
 bool _hasVisibleConfiguredLightingAlarm(

@@ -381,10 +381,11 @@ class RoomSnapshotNotifier
     ];
     ref
         .read(alarmsProvider.notifier)
-        .syncLightingDeviceAlarmsForRoom(
+        .syncRuntimeAlarmsForRoom(
           snapshot.roomData.number,
           devices,
           hasDaliLineShortCircuit: snapshot.hasDaliLineShortCircuit,
+          hvacDetail: snapshot.roomData.hvacDetail,
         );
   }
 
