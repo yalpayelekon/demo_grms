@@ -104,6 +104,8 @@ func TestMapRcuEventIncludesDoorPositionNames(t *testing.T) {
 	}{
 		{subCmdNo: 0, wantName: "Event_occapp_door_opened"},
 		{subCmdNo: 1, wantName: "Event_occapp_door_closed"},
+		{subCmdNo: 2, wantName: "Event_occapp_door_open_alarm"},
+		{subCmdNo: 3, wantName: "Event_occapp_door_open_alarm_deleted"},
 	}
 
 	for _, tt := range tests {

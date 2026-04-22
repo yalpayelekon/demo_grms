@@ -2401,18 +2401,21 @@ func (r *realRcuClient) processEvent(frame *rcuFrame) {
 	eventInfo := mapRcuEvent(frame.CmdNo, frame.SubCmdNo)
 	if frame.CmdNo != 7 {
 		payloadHex := strings.ToUpper(hex.EncodeToString(frame.Payload))
+		eventKey := fmt.Sprintf("%d:%d", frame.CmdNo, frame.SubCmdNo)
 		log.Printf(
-			"rcu.event room=%s cmdType=%d cmdNo=%d subCmdNo=%d payloadLen=%d payloadHex=%s",
+			"rcu.event room=%s cmdType=%d cmdNo=%d subCmdNo=%d eventKey=%s payloadLen=%d payloadHex=%s",
 			r.room,
 			frame.CmdType,
 			frame.CmdNo,
 			frame.SubCmdNo,
+			eventKey,
 			len(frame.Payload),
 			payloadHex,
 		)
 		log.Printf(
-			"rcu.event.type room=%s eventType=%s detail=%s",
+			"rcu.event.type room=%s eventKey=%s eventType=%s detail=%s",
 			r.room,
+			eventKey,
 			eventInfo.Name,
 			eventInfo.Description,
 		)
@@ -2534,9 +2537,9 @@ func mapRcuEvent(cmdNo, subCmdNo int) rcuEventInfo {
 		case 1:
 			return rcuEventInfo{Name: "Event_occapp_door_closed", Description: "door closed"}
 		case 2:
-			return rcuEventInfo{Name: "Event_occapp_open_door_alarm", Description: "open door alarm raised"}
+			return rcuEventInfo{Name: "Event_occapp_door_open_alarm", Description: "open door alarm raised"}
 		case 3:
-			return rcuEventInfo{Name: "Event_occapp_open_door_alarm_deleted", Description: "open door alarm cleared"}
+			return rcuEventInfo{Name: "Event_occapp_door_open_alarm_deleted", Description: "open door alarm cleared"}
 		case 4:
 			return rcuEventInfo{Name: "Event_occapp_room_empty", Description: "room changed to empty"}
 		case 5:
