@@ -93,6 +93,8 @@ var (
 	queueRetryMax       int
 	pollingLogsOnce     sync.Once
 	pollingLogsEnabled  bool
+	neverCloseConnOnce  sync.Once
+	neverCloseConnValue bool
 )
 
 type queuedCommandKind string
@@ -1652,7 +1654,9 @@ func (r *realRcuClient) startModbusSyncLoop() {
 					if err != nil {
 						// log.Printf("rcu.modbus.poll.read failed room=%s reg=0x%X error=%v", r.room, reg, err)
 						r.setHvacComError(1)
-						r.closeConnLocked()
+						if shouldCloseConnectionForModbusError(err) {
+							r.closeConnLocked()
+						}
 						break
 					}
 					if ev.Ack != modbusAckOK {
@@ -1735,7 +1739,9 @@ func (r *realRcuClient) sendModbusReadAndAwaitAckLocked(register int, count int,
 		return frame.CmdNo == 7 && frame.SubCmdNo == 0
 	})
 	if err != nil {
-		r.closeConnLocked()
+		if shouldCloseConnectionForModbusError(err) {
+			r.closeConnLocked()
+		}
 		return nil, err
 	}
 	for {
@@ -1745,7 +1751,9 @@ func (r *realRcuClient) sendModbusReadAndAwaitAckLocked(register int, count int,
 				return frame.CmdNo == 7 && frame.SubCmdNo == 0
 			})
 			if err != nil {
-				r.closeConnLocked()
+				if shouldCloseConnectionForModbusError(err) {
+					r.closeConnLocked()
+				}
 				return nil, err
 			}
 			continue
@@ -1755,7 +1763,9 @@ func (r *realRcuClient) sendModbusReadAndAwaitAckLocked(register int, count int,
 				return frame.CmdNo == 7 && frame.SubCmdNo == 0
 			})
 			if err != nil {
-				r.closeConnLocked()
+				if shouldCloseConnectionForModbusError(err) {
+					r.closeConnLocked()
+				}
 				return nil, err
 			}
 			continue
@@ -1782,7 +1792,9 @@ func (r *realRcuClient) sendModbusWriteAndAwaitAckLocked(msg []byte, shortAddr i
 		return frame.CmdNo == 7 && frame.SubCmdNo == 1
 	})
 	if err != nil {
-		r.closeConnLocked()
+		if shouldCloseConnectionForModbusError(err) {
+			r.closeConnLocked()
+		}
 		return nil, err
 	}
 	for {
@@ -1792,7 +1804,9 @@ func (r *realRcuClient) sendModbusWriteAndAwaitAckLocked(msg []byte, shortAddr i
 				return frame.CmdNo == 7 && frame.SubCmdNo == 1
 			})
 			if err != nil {
-				r.closeConnLocked()
+				if shouldCloseConnectionForModbusError(err) {
+					r.closeConnLocked()
+				}
 				return nil, err
 			}
 			continue
@@ -1802,7 +1816,9 @@ func (r *realRcuClient) sendModbusWriteAndAwaitAckLocked(msg []byte, shortAddr i
 				return frame.CmdNo == 7 && frame.SubCmdNo == 1
 			})
 			if err != nil {
-				r.closeConnLocked()
+				if shouldCloseConnectionForModbusError(err) {
+					r.closeConnLocked()
+				}
 				return nil, err
 			}
 			continue
@@ -3314,6 +3330,21 @@ func isTimeoutError(err error) bool {
 		return true
 	}
 	return strings.Contains(strings.ToLower(err.Error()), "i/o timeout")
+}
+
+func neverCloseConnection() bool {
+	neverCloseConnOnce.Do(func() {
+		raw := strings.TrimSpace(os.Getenv("TESTCOMM_NEVER_CLOSE_CONN"))
+		neverCloseConnValue = raw == "1" || strings.EqualFold(raw, "true")
+	})
+	return neverCloseConnValue
+}
+
+func shouldCloseConnectionForModbusError(err error) bool {
+	if neverCloseConnection() {
+		return false
+	}
+	return !isTimeoutError(err)
 }
 
 func isClosedConnError(err error) bool {
