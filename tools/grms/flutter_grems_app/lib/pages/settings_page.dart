@@ -1213,7 +1213,7 @@ class _PreferencesTabState extends ConsumerState<_PreferencesTab> {
                       TextButton(
                         onPressed: () async {
                           final messenger = ScaffoldMessenger.of(context);
-                          const defaultHost = '192.168.1.114';
+                          final defaultHost = resolveDemoRcuDefaultHost();
                           const defaultPort = 5556;
                           _demoRcuHostController.text = defaultHost;
                           _demoRcuPortController.text = '$defaultPort';

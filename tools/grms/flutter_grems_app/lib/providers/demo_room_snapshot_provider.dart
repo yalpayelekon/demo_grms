@@ -294,7 +294,6 @@ class RoomSnapshotNotifier
     );
     _scheduleAlarmSync(runtimeSnapshot);
     if (kDebugMode) {
-      final version = state.snapshotVersion + 1;
       final prevSnapshot = state.snapshot;
       final lightingDevices = displaySnapshot['lightingDevices'];
       List<dynamic>? prevDevices;
@@ -304,8 +303,6 @@ class RoomSnapshotNotifier
           prevDevices = rawPrevDevices;
         }
       }
-
-      int changedCount = 0;
 
       if (lightingDevices is List && prevDevices is List) {
         // Map previous devices by (type,address) so we can diff levels.
@@ -332,40 +329,7 @@ class RoomSnapshotNotifier
           if (prev == null) {
             continue;
           }
-
-          double toDouble(dynamic v) {
-            if (v is num) return v.toDouble();
-            if (v is String) {
-              final parsed = double.tryParse(v);
-              if (parsed != null) return parsed;
-            }
-            return 0;
-          }
-
-          final prevActual = toDouble(prev['actualLevel']);
-          final prevTarget = toDouble(prev['targetLevel']);
-          final nextActual = toDouble(map['actualLevel']);
-          final nextTarget = toDouble(map['targetLevel']);
-
-          final changed = prevActual != nextActual || prevTarget != nextTarget;
-          if (changed) {
-            changedCount += 1;
-            debugPrint(
-              'DemoRoomSnapshotNotifier: lighting change '
-              'version=$version source=${source.isEmpty ? state.source : source} '
-              'addr=$address type=$type '
-              'actual $prevActual -> $nextActual '
-              'target $prevTarget -> $nextTarget',
-            );
-          }
         }
-      }
-
-      if (changedCount == 0) {
-        debugPrint(
-          'DemoRoomSnapshotNotifier: applySnapshot(no lighting change) '
-          'version=$version source=${source.isEmpty ? state.source : source}',
-        );
       }
     }
     state = state.copyWith(

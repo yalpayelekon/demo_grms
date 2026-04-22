@@ -8,11 +8,18 @@ import '../providers/coordinates_sync_provider.dart';
 import '../models/dashboard_models.dart';
 import '../widgets/energy_savings_chart.dart';
 
-class DashboardPage extends ConsumerWidget {
+class DashboardPage extends ConsumerStatefulWidget {
   const DashboardPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends ConsumerState<DashboardPage> {
+  _DashboardViewportInfo? _viewportInfo;
+
+  @override
+  Widget build(BuildContext context) {
     final dashboardState = ref.watch(dashboardProvider);
     final stats = dashboardState.stats;
     final hotelSync = ref.watch(demoRoomHotelSyncStatusProvider);
@@ -21,7 +28,7 @@ class DashboardPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dashboard'),
+        title: _DashboardDebugTitle(info: _viewportInfo),
         elevation: 0,
         backgroundColor: Colors.transparent,
       ),
@@ -37,24 +44,15 @@ class DashboardPage extends ConsumerWidget {
         child: SafeArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final contentWidth = constraints.maxWidth;
-              final contentHeight = constraints.maxHeight;
-              final canUseFixedDesktopGrid =
-                  contentWidth >= 1400 && contentHeight >= 760;
-              final canUseFixedTabletGrid =
-                  contentWidth >= 900 && contentHeight >= 620;
-              final useCompactCards =
-                  contentHeight <= 900 || contentWidth <= 1400;
-              final useUltraCompactCards =
-                  contentHeight <= 760 || contentWidth < 1200;
-              final useTightTabletSpacing =
-                  contentHeight <= 760 || contentWidth < 1320;
-              final canUseFixedGrid =
-                  canUseFixedDesktopGrid || canUseFixedTabletGrid;
-
+              final viewportInfo = _DashboardViewportInfo.fromConstraints(
+                constraints,
+              );
+              _syncViewportInfo(viewportInfo);
               return Padding(
-                padding: EdgeInsets.all(useTightTabletSpacing ? 18.0 : 24.0),
-                child: canUseFixedGrid
+                padding: EdgeInsets.all(
+                  viewportInfo.useTightTabletSpacing ? 18.0 : 24.0,
+                ),
+                child: viewportInfo.canUseFixedGrid
                     // Desktop/tablet: fit cards into viewport without scrolling
                     ? Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -68,9 +66,11 @@ class DashboardPage extends ConsumerWidget {
                               serviceSync: serviceSync,
                               coordinatesSync: coordinatesSync,
                               pinToViewport: true,
-                              useCompactCards: useCompactCards,
-                              useUltraCompactCards: useUltraCompactCards,
-                              useTightTabletSpacing: useTightTabletSpacing,
+                              useCompactCards: viewportInfo.useCompactCards,
+                              useUltraCompactCards:
+                                  viewportInfo.useUltraCompactCards,
+                              useTightTabletSpacing:
+                                  viewportInfo.useTightTabletSpacing,
                             ),
                           ),
                         ],
@@ -93,8 +93,10 @@ class DashboardPage extends ConsumerWidget {
                                 coordinatesSync: coordinatesSync,
                                 pinToViewport: false,
                                 useCompactCards: true,
-                                useUltraCompactCards: useUltraCompactCards,
-                                useTightTabletSpacing: useTightTabletSpacing,
+                                useUltraCompactCards:
+                                    viewportInfo.useUltraCompactCards,
+                                useTightTabletSpacing:
+                                    viewportInfo.useTightTabletSpacing,
                               ),
                             ],
                           ),
@@ -106,6 +108,21 @@ class DashboardPage extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  void _syncViewportInfo(_DashboardViewportInfo nextInfo) {
+    if (_viewportInfo == nextInfo) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _viewportInfo == nextInfo) {
+        return;
+      }
+      setState(() {
+        _viewportInfo = nextInfo;
+      });
+    });
   }
 
   Widget _buildResponsiveGrid(
@@ -131,44 +148,61 @@ class DashboardPage extends ConsumerWidget {
       _CommunicationItem(label: 'PMS', value: 'Online', online: true),
     ];
 
-    final cards = <Widget>[
-      _CommunicationPanel(
-        items: communicationItems,
-        compact: useCompactCards,
-        ultraCompact: useUltraCompactCards,
-      ),
-      _AlarmPanel(
-        stats: stats.alarmStats,
-        totalRooms: stats.totalRooms,
-        compact: useCompactCards,
-        ultraCompact: useUltraCompactCards,
-      ),
-      _HvacPanel(
-        stats: stats.hvacStats,
-        totalRooms: stats.totalRooms,
-        outsideTemp: state.outsideTemp,
-        compact: useCompactCards,
-        ultraCompact: useUltraCompactCards,
-      ),
-      _OccupancyPanel(
-        stats: stats,
-        compact: useCompactCards,
-        ultraCompact: useUltraCompactCards,
-      ),
-      _ServicePanel(
-        stats: stats,
-        compact: useCompactCards,
-        ultraCompact: useUltraCompactCards,
-      ),
-      _EnergyPanel(
-        isCompact: true,
-        compact: useCompactCards,
-        ultraCompact: useUltraCompactCards,
-      ),
-    ];
     return LayoutBuilder(
       builder: (context, constraints) {
-        final crossAxisCount = pinToViewport ? 3 : (constraints.maxWidth >= 850 ? 2 : 1);
+        final crossAxisCount = pinToViewport
+            ? 3
+            : (constraints.maxWidth >= 850 ? 2 : 1);
+        final desktopFontDelta =
+            pinToViewport &&
+                constraints.maxWidth >= 1400 &&
+                !useUltraCompactCards
+            ? 2.0
+            : 0.0;
+        final cardTextScale =
+            pinToViewport &&
+                constraints.maxWidth >= 1400 &&
+                !useUltraCompactCards
+            ? 1.4
+            : 1.0;
+        final cards = <Widget>[
+          _CommunicationPanel(
+            items: communicationItems,
+            compact: useCompactCards,
+            ultraCompact: useUltraCompactCards,
+          ),
+          _AlarmPanel(
+            stats: stats.alarmStats,
+            totalRooms: stats.totalRooms,
+            compact: useCompactCards,
+            ultraCompact: useUltraCompactCards,
+            desktopFontDelta: desktopFontDelta,
+          ),
+          _HvacPanel(
+            stats: stats.hvacStats,
+            totalRooms: stats.totalRooms,
+            outsideTemp: state.outsideTemp,
+            compact: useCompactCards,
+            ultraCompact: useUltraCompactCards,
+          ),
+          _OccupancyPanel(
+            stats: stats,
+            compact: useCompactCards,
+            ultraCompact: useUltraCompactCards,
+            desktopFontDelta: desktopFontDelta,
+          ),
+          _ServicePanel(
+            stats: stats,
+            compact: useCompactCards,
+            ultraCompact: useUltraCompactCards,
+            desktopFontDelta: desktopFontDelta,
+          ),
+          _EnergyPanel(
+            compact: useCompactCards,
+            ultraCompact: useUltraCompactCards,
+            desktopFontDelta: desktopFontDelta,
+          ),
+        ];
         final spacing = useTightTabletSpacing ? 12.0 : 16.0;
         final rowCount = (cards.length / crossAxisCount).ceil();
         final usableWidth = math.max(
@@ -193,11 +227,152 @@ class DashboardPage extends ConsumerWidget {
             crossAxisSpacing: spacing,
             childAspectRatio: tileWidth / tileHeight,
           ),
-          itemBuilder: (context, index) => cards[index],
+          itemBuilder: (context, index) =>
+              _ScaledCardText(scale: cardTextScale, child: cards[index]),
         );
       },
     );
   }
+}
+
+class _ScaledCardText extends StatelessWidget {
+  final double scale;
+  final Widget child;
+
+  const _ScaledCardText({required this.scale, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    if (scale == 1.0) {
+      return child;
+    }
+
+    return MediaQuery(
+      data: MediaQuery.of(
+        context,
+      ).copyWith(textScaler: TextScaler.linear(scale)),
+      child: child,
+    );
+  }
+}
+
+class _DashboardDebugTitle extends StatelessWidget {
+  final _DashboardViewportInfo? info;
+
+  const _DashboardDebugTitle({required this.info});
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Text(
+          info?.summaryLabel ?? 'Dashboard',
+          maxLines: 1,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DashboardViewportInfo {
+  final double width;
+  final double height;
+  final bool canUseFixedDesktopGrid;
+  final bool canUseFixedTabletGrid;
+  final bool useCompactCards;
+  final bool useUltraCompactCards;
+  final bool useTightTabletSpacing;
+
+  const _DashboardViewportInfo({
+    required this.width,
+    required this.height,
+    required this.canUseFixedDesktopGrid,
+    required this.canUseFixedTabletGrid,
+    required this.useCompactCards,
+    required this.useUltraCompactCards,
+    required this.useTightTabletSpacing,
+  });
+
+  factory _DashboardViewportInfo.fromConstraints(BoxConstraints constraints) {
+    final width = constraints.maxWidth;
+    final height = constraints.maxHeight;
+    final canUseClassicTabletGrid = width >= 800 && height >= 600;
+    final canUseShortLandscapeTabletGrid = width >= 900 && height >= 500;
+    return _DashboardViewportInfo(
+      width: width,
+      height: height,
+      canUseFixedDesktopGrid: width >= 1400 && height >= 760,
+      canUseFixedTabletGrid:
+          canUseClassicTabletGrid || canUseShortLandscapeTabletGrid,
+      useCompactCards: height <= 900 || width <= 1400,
+      useUltraCompactCards: height <= 760 || width < 1200,
+      useTightTabletSpacing: height <= 760 || width < 1320,
+    );
+  }
+
+  bool get canUseFixedGrid => canUseFixedDesktopGrid || canUseFixedTabletGrid;
+
+  String get modeLabel {
+    if (canUseFixedDesktopGrid) {
+      return 'Desktop';
+    }
+    if (canUseFixedTabletGrid) {
+      return 'Tablet';
+    }
+    return 'Mobile';
+  }
+
+  String get cardDensityLabel {
+    if (useUltraCompactCards) {
+      return 'Ultra';
+    }
+    if (useCompactCards) {
+      return 'Compact';
+    }
+    return 'Regular';
+  }
+
+  String get spacingLabel => useTightTabletSpacing ? 'Tight' : 'Regular';
+
+  String get gridLabel => canUseFixedGrid ? '3x2 fixed' : 'scroll';
+
+  String get summaryLabel =>
+      '${width.toStringAsFixed(0)}x${height.toStringAsFixed(0)} | '
+      '$modeLabel | $gridLabel | $cardDensityLabel | $spacingLabel';
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) {
+      return true;
+    }
+    return other is _DashboardViewportInfo &&
+        other.width.round() == width.round() &&
+        other.height.round() == height.round() &&
+        other.canUseFixedDesktopGrid == canUseFixedDesktopGrid &&
+        other.canUseFixedTabletGrid == canUseFixedTabletGrid &&
+        other.useCompactCards == useCompactCards &&
+        other.useUltraCompactCards == useUltraCompactCards &&
+        other.useTightTabletSpacing == useTightTabletSpacing;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    width.round(),
+    height.round(),
+    canUseFixedDesktopGrid,
+    canUseFixedTabletGrid,
+    useCompactCards,
+    useUltraCompactCards,
+    useTightTabletSpacing,
+  );
 }
 
 class _GlassCard extends StatelessWidget {
@@ -207,6 +382,7 @@ class _GlassCard extends StatelessWidget {
   final Widget? trailing;
   final bool compact;
   final bool ultraCompact;
+  final bool expandChild;
 
   const _GlassCard({
     required this.child,
@@ -215,6 +391,7 @@ class _GlassCard extends StatelessWidget {
     this.trailing,
     this.compact = false,
     this.ultraCompact = false,
+    this.expandChild = false,
   });
 
   @override
@@ -263,7 +440,7 @@ class _GlassCard extends StatelessWidget {
               ],
             ),
             SizedBox(height: headerGap),
-            child,
+            if (expandChild) Expanded(child: child) else child,
           ],
         ),
       ),
@@ -276,11 +453,13 @@ class _AlarmPanel extends StatelessWidget {
   final int totalRooms;
   final bool compact;
   final bool ultraCompact;
+  final double desktopFontDelta;
   const _AlarmPanel({
     required this.stats,
     required this.totalRooms,
     this.compact = false,
     this.ultraCompact = false,
+    this.desktopFontDelta = 0,
   });
 
   @override
@@ -300,7 +479,7 @@ class _AlarmPanel extends StatelessWidget {
                 'Aktif alarm yok',
                 style: TextStyle(
                   color: Colors.white54,
-                  fontSize: compact ? 12 : 13,
+                  fontSize: (compact ? 12 : 13) + desktopFontDelta,
                 ),
               ),
             )
@@ -319,6 +498,7 @@ class _AlarmPanel extends StatelessWidget {
                   totalRooms: totalRooms,
                   icon: _alarmIconForLabel(stat.label),
                   compact: compact,
+                  desktopFontDelta: desktopFontDelta,
                 );
               }).toList(),
             ),
@@ -347,6 +527,7 @@ class _AlarmCategoryCard extends StatelessWidget {
   final String? imageAssetPath;
   final bool compact;
   final bool tightHeight;
+  final double desktopFontDelta;
 
   const _AlarmCategoryCard({
     required this.label,
@@ -356,6 +537,7 @@ class _AlarmCategoryCard extends StatelessWidget {
     this.imageAssetPath,
     this.compact = false,
     this.tightHeight = false,
+    this.desktopFontDelta = 0,
   }) : assert(icon != null || imageAssetPath != null);
 
   @override
@@ -393,7 +575,7 @@ class _AlarmCategoryCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: Colors.white70,
-                      fontSize: compact ? 9 : 10,
+                      fontSize: (compact ? 9 : 10) + desktopFontDelta,
                     ),
                   ),
                 ),
@@ -406,7 +588,7 @@ class _AlarmCategoryCard extends StatelessWidget {
             style: TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.bold,
-              fontSize: compact ? 12 : 13,
+              fontSize: (compact ? 12 : 13) + desktopFontDelta,
             ),
           ),
         ],
@@ -419,10 +601,12 @@ class _OccupancyPanel extends StatelessWidget {
   final DashboardStats stats;
   final bool compact;
   final bool ultraCompact;
+  final double desktopFontDelta;
   const _OccupancyPanel({
     required this.stats,
     this.compact = false,
     this.ultraCompact = false,
+    this.desktopFontDelta = 0,
   });
 
   @override
@@ -437,7 +621,7 @@ class _OccupancyPanel extends StatelessWidget {
           Text(
             'Rented % ${stats.rentedRate}',
             style: TextStyle(
-              fontSize: compact ? 18 : 22,
+              fontSize: compact ? 16 : 20,
               fontWeight: FontWeight.bold,
               color: Colors.white,
             ),
@@ -466,6 +650,7 @@ class _OccupancyPanel extends StatelessWidget {
                 imageAssetPath: _occupancyAssetForLabel(statusStat.label),
                 compact: compact,
                 tightHeight: true,
+                desktopFontDelta: desktopFontDelta,
               );
             }).toList(),
           ),
@@ -502,10 +687,12 @@ class _ServicePanel extends StatelessWidget {
   final DashboardStats stats;
   final bool compact;
   final bool ultraCompact;
+  final double desktopFontDelta;
   const _ServicePanel({
     required this.stats,
     this.compact = false,
     this.ultraCompact = false,
+    this.desktopFontDelta = 0,
   });
 
   @override
@@ -530,36 +717,42 @@ class _ServicePanel extends StatelessWidget {
                 valueText: stats.dndCount.toString(),
                 icon: Icons.do_not_disturb_on_outlined,
                 compact: compact,
+                desktopFontDelta: desktopFontDelta,
               ),
               _ServiceCompactCard(
                 label: 'Laundry',
                 valueText: stats.lndCount.toString(),
                 icon: Icons.local_laundry_service_outlined,
                 compact: compact,
+                desktopFontDelta: desktopFontDelta,
               ),
               _ServiceCompactCard(
                 label: 'Make Up Room',
                 valueText: stats.murCount.toString(),
                 icon: Icons.cleaning_services_outlined,
                 compact: compact,
+                desktopFontDelta: desktopFontDelta,
               ),
               _ServiceCompactCard(
                 label: 'Delayed',
                 valueText: stats.delayedCount.toString(),
                 icon: Icons.schedule_outlined,
                 compact: compact,
+                desktopFontDelta: desktopFontDelta,
               ),
               _ServiceCompactCard(
                 label: 'In Progress',
                 valueText: stats.inProgressCount.toString(),
                 icon: Icons.sync_outlined,
                 compact: compact,
+                desktopFontDelta: desktopFontDelta,
               ),
               _ServiceCompactCard(
                 label: 'Avg Response Time',
                 valueText: '${stats.averageServiceRequestMinutes} min',
                 icon: Icons.timer_outlined,
                 compact: compact,
+                desktopFontDelta: desktopFontDelta,
               ),
             ],
           ),
@@ -574,12 +767,14 @@ class _ServiceCompactCard extends StatelessWidget {
   final String valueText;
   final IconData icon;
   final bool compact;
+  final double desktopFontDelta;
 
   const _ServiceCompactCard({
     required this.label,
     required this.valueText,
     required this.icon,
     this.compact = false,
+    this.desktopFontDelta = 0,
   });
 
   @override
@@ -608,7 +803,7 @@ class _ServiceCompactCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: Colors.white70,
-                      fontSize: compact ? 9 : 10,
+                      fontSize: (compact ? 9 : 10) + desktopFontDelta,
                     ),
                   ),
                 ),
@@ -621,7 +816,7 @@ class _ServiceCompactCard extends StatelessWidget {
             style: TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.bold,
-              fontSize: compact ? 12 : 13,
+              fontSize: (compact ? 12 : 13) + desktopFontDelta,
             ),
           ),
         ],
@@ -730,53 +925,152 @@ class _HvacPanel extends StatelessWidget {
 }
 
 class _EnergyPanel extends StatelessWidget {
-  final bool isCompact;
   final bool compact;
   final bool ultraCompact;
+  final double desktopFontDelta;
 
   const _EnergyPanel({
-    required this.isCompact,
     this.compact = false,
     this.ultraCompact = false,
+    this.desktopFontDelta = 0,
   });
 
   @override
   Widget build(BuildContext context) {
-    final chartHeight = isCompact
-        ? (compact ? 160.0 : 200.0)
-        : (compact ? 240.0 : 300.0);
+    final hideSummaryMetrics = ultraCompact;
 
     return _GlassCard(
       title: 'Energy Consumption',
       subtitle: 'Energy saving trend',
       compact: compact,
       ultraCompact: ultraCompact,
+      expandChild: true,
+      trailing: hideSummaryMetrics
+          ? _EnergySummaryInfoButton(compact: compact)
+          : null,
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _EnergyLegendItem(
-                label: 'Total',
-                value: '148 kWh',
-                compact: compact,
+          if (!hideSummaryMetrics) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _EnergyLegendItem(
+                  label: 'Total',
+                  value: '148 kWh',
+                  compact: compact,
+                  desktopFontDelta: desktopFontDelta,
+                ),
+                _EnergyLegendItem(
+                  label: 'Peak',
+                  value: '182 kWh',
+                  compact: compact,
+                  desktopFontDelta: desktopFontDelta,
+                ),
+                _EnergyLegendItem(
+                  label: 'Off-Peak',
+                  value: '96 kWh',
+                  compact: compact,
+                  desktopFontDelta: desktopFontDelta,
+                ),
+              ],
+            ),
+            SizedBox(height: compact ? 8 : 12),
+          ],
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(top: ultraCompact ? 0 : 4),
+              child: EnergySavingsChart(
+                compactMode: ultraCompact,
+                desktopFontDelta: desktopFontDelta,
               ),
-              _EnergyLegendItem(
-                label: 'Peak',
-                value: '182 kWh',
-                compact: compact,
-              ),
-              _EnergyLegendItem(
-                label: 'Off-Peak',
-                value: '96 kWh',
-                compact: compact,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EnergySummaryInfoButton extends StatelessWidget {
+  final bool compact;
+
+  const _EnergySummaryInfoButton({required this.compact});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () {
+        showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: const Color(0xFF232A3A),
+            title: const Text(
+              'Energy Summary',
+              style: TextStyle(color: Colors.white),
+            ),
+            content: const Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _EnergySummaryDialogRow(label: 'Total', value: '148 kWh'),
+                SizedBox(height: 12),
+                _EnergySummaryDialogRow(label: 'Peak', value: '182 kWh'),
+                SizedBox(height: 12),
+                _EnergySummaryDialogRow(label: 'Off-Peak', value: '96 kWh'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
               ),
             ],
           ),
-          SizedBox(height: compact ? 8 : 12),
-          SizedBox(height: chartHeight, child: const EnergySavingsChart()),
-        ],
+        );
+      },
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        width: compact ? 28 : 32,
+        height: compact ? 28 : 32,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.06),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white.withOpacity(0.12)),
+        ),
+        child: Icon(
+          Icons.info_outline,
+          size: compact ? 16 : 18,
+          color: Colors.white70,
+        ),
       ),
+    );
+  }
+}
+
+class _EnergySummaryDialogRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _EnergySummaryDialogRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white70, fontSize: 13),
+        ),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -871,10 +1165,12 @@ class _EnergyLegendItem extends StatelessWidget {
   final String label;
   final String value;
   final bool compact;
+  final double desktopFontDelta;
   const _EnergyLegendItem({
     required this.label,
     required this.value,
     this.compact = false,
+    this.desktopFontDelta = 0,
   });
 
   @override
@@ -883,7 +1179,10 @@ class _EnergyLegendItem extends StatelessWidget {
       children: [
         Text(
           label,
-          style: TextStyle(color: Colors.white54, fontSize: compact ? 10 : 11),
+          style: TextStyle(
+            color: Colors.white54,
+            fontSize: (compact ? 10 : 11) + desktopFontDelta,
+          ),
         ),
         SizedBox(height: compact ? 2 : 4),
         Text(
@@ -891,7 +1190,7 @@ class _EnergyLegendItem extends StatelessWidget {
           style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
-            fontSize: compact ? 13 : 14,
+            fontSize: (compact ? 13 : 14) + desktopFontDelta,
           ),
         ),
       ],

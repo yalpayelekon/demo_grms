@@ -63,6 +63,18 @@ String resolveTestCommApiBaseUrl({String fallback = 'http://localhost:8082'}) {
   return resolveRuntimeApiBaseUrl();
 }
 
+String resolveDemoRcuDefaultHost({String fallback = '192.168.1.114'}) {
+  const envValue = String.fromEnvironment(
+    'DEMO_RCU_DEFAULT_HOST',
+    defaultValue: '',
+  );
+  final normalizedEnv = envValue.trim();
+  if (normalizedEnv.isNotEmpty) {
+    return normalizedEnv;
+  }
+  return fallback;
+}
+
 DeploymentMode _resolveDeploymentMode() {
   const envValue = String.fromEnvironment(
     'GREMS_DEPLOYMENT_MODE',

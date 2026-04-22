@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -42,27 +43,79 @@ class _AppShellState extends ConsumerState<AppShell> {
     final authState = ref.watch(authProvider);
     final location = GoRouterState.of(context).matchedLocation;
     final selectedIndex = _getSelectedIndex(location);
+    final viewport = MediaQuery.sizeOf(context);
+    final isMobilePlatform =
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+    final desktopFontDelta = !isMobilePlatform && viewport.width >= 1400
+        ? 2.0
+        : 0.0;
+    final sidebarLayout = _SidebarLayout.fromViewport(
+      viewport,
+      isCollapsed: _isCollapsed,
+    );
 
     final destinations = [
-      const _NavDestination(label: 'Dashboard', icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard, route: '/'),
-      const _NavDestination(label: 'Home', icon: Icons.home_outlined, activeIcon: Icons.home, route: '/home'),
-      const _NavDestination(label: 'Hotel Status', icon: Icons.hotel_outlined, activeIcon: Icons.hotel, route: '/hotel-status'),
-      const _NavDestination(label: 'Alarms', icon: Icons.notifications_outlined, activeIcon: Icons.notifications, route: '/alarms'),
-      const _NavDestination(label: 'Service Status', icon: Icons.room_service_outlined, activeIcon: Icons.room_service, route: '/service-status'),
-      const _NavDestination(label: 'Reports', icon: Icons.description_outlined, activeIcon: Icons.description, route: '/reports'),
+      const _NavDestination(
+        label: 'Dashboard',
+        icon: Icons.dashboard_outlined,
+        activeIcon: Icons.dashboard,
+        route: '/',
+      ),
+      const _NavDestination(
+        label: 'Home',
+        icon: Icons.home_outlined,
+        activeIcon: Icons.home,
+        route: '/home',
+      ),
+      const _NavDestination(
+        label: 'Hotel Status',
+        icon: Icons.hotel_outlined,
+        activeIcon: Icons.hotel,
+        route: '/hotel-status',
+      ),
+      const _NavDestination(
+        label: 'Alarms',
+        icon: Icons.notifications_outlined,
+        activeIcon: Icons.notifications,
+        route: '/alarms',
+      ),
+      const _NavDestination(
+        label: 'Service Status',
+        icon: Icons.room_service_outlined,
+        activeIcon: Icons.room_service,
+        route: '/service-status',
+      ),
+      const _NavDestination(
+        label: 'Reports',
+        icon: Icons.description_outlined,
+        activeIcon: Icons.description,
+        route: '/reports',
+      ),
       if (authState.isAdmin)
-        const _NavDestination(label: 'Settings', icon: Icons.settings_outlined, activeIcon: Icons.settings, route: '/settings'),
+        const _NavDestination(
+          label: 'Settings',
+          icon: Icons.settings_outlined,
+          activeIcon: Icons.settings,
+          route: '/settings',
+        ),
     ];
 
     return Scaffold(
       body: Row(
         children: [
-          _buildSidebar(context, authState, destinations, selectedIndex),
+          _buildSidebar(
+            context,
+            authState,
+            destinations,
+            selectedIndex,
+            sidebarLayout,
+          ),
           const VerticalDivider(thickness: 1, width: 1),
           Expanded(
             child: Column(
               children: [
-                _buildHeader(context, authState),
+                _buildHeader(context, authState, desktopFontDelta),
                 Expanded(child: widget.child),
               ],
             ),
@@ -72,29 +125,37 @@ class _AppShellState extends ConsumerState<AppShell> {
     );
   }
 
-  Widget _buildSidebar(BuildContext context, AuthState authState, List<_NavDestination> destinations, int selectedIndex) {
+  Widget _buildSidebar(
+    BuildContext context,
+    AuthState authState,
+    List<_NavDestination> destinations,
+    int selectedIndex,
+    _SidebarLayout sidebarLayout,
+  ) {
     return Container(
-      width: _isCollapsed ? 76 : 232,
+      width: sidebarLayout.width,
       color: Theme.of(context).colorScheme.surface,
       child: Column(
         children: [
-          const SizedBox(height: 24),
+          SizedBox(height: sidebarLayout.topSpacing),
           // Logo Area
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: EdgeInsets.symmetric(
+              horizontal: sidebarLayout.horizontalPadding,
+            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Image.asset(
                   'assets/images/vanpeelogo.png',
-                  width: _isCollapsed ? 66 : 112,
-                  height: _isCollapsed ? 66 : 112,
+                  width: sidebarLayout.logoSize,
+                  height: sidebarLayout.logoSize,
                   fit: BoxFit.contain,
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 40),
+          SizedBox(height: sidebarLayout.logoBottomSpacing),
           // Navigation Items
           Expanded(
             child: ListView.builder(
@@ -106,6 +167,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                   destination: d,
                   isSelected: isSelected,
                   isCollapsed: _isCollapsed,
+                  layout: sidebarLayout,
                   onTap: () {
                     if (!isSelected) {
                       context.go(d.route);
@@ -116,13 +178,13 @@ class _AppShellState extends ConsumerState<AppShell> {
             ),
           ),
           // Sidebar Footer
-          _buildSidebarFooter(),
+          _buildSidebarFooter(sidebarLayout),
         ],
       ),
     );
   }
 
-  Widget _buildSidebarFooter() {
+  Widget _buildSidebarFooter(_SidebarLayout sidebarLayout) {
     return Column(
       children: [
         const Divider(height: 1),
@@ -135,15 +197,20 @@ class _AppShellState extends ConsumerState<AppShell> {
           ),
           isSelected: false,
           isCollapsed: _isCollapsed,
+          layout: sidebarLayout,
           onTap: () => _handleLogout(),
           color: Colors.redAccent,
         ),
-        const SizedBox(height: 12),
+        SizedBox(height: sidebarLayout.footerBottomSpacing),
       ],
     );
   }
 
-  Widget _buildHeader(BuildContext context, AuthState authState) {
+  Widget _buildHeader(
+    BuildContext context,
+    AuthState authState,
+    double desktopFontDelta,
+  ) {
     return Container(
       height: 64,
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -189,14 +256,21 @@ class _AppShellState extends ConsumerState<AppShell> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      authState.user?.displayName ?? authState.user?.username ?? 'User',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      authState.user?.displayName ??
+                          authState.user?.username ??
+                          'User',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14 + desktopFontDelta,
+                      ),
                     ),
                     Text(
                       authState.role.label.toUpperCase(),
                       style: TextStyle(
-                        fontSize: 10,
-                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                        fontSize: 10 + desktopFontDelta,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withOpacity(0.5),
                         letterSpacing: 1,
                       ),
                     ),
@@ -260,6 +334,7 @@ class _SidebarItem extends StatelessWidget {
   final _NavDestination destination;
   final bool isSelected;
   final bool isCollapsed;
+  final _SidebarLayout layout;
   final VoidCallback onTap;
   final Color? color;
 
@@ -267,6 +342,7 @@ class _SidebarItem extends StatelessWidget {
     required this.destination,
     required this.isSelected,
     required this.isCollapsed,
+    required this.layout,
     required this.onTap,
     this.color,
   });
@@ -277,33 +353,50 @@ class _SidebarItem extends StatelessWidget {
     final activeColor = color ?? Colors.blue;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: EdgeInsets.symmetric(
+        horizontal: layout.itemOuterHorizontalPadding,
+        vertical: layout.itemOuterVerticalPadding,
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          height: 48,
+          height: layout.itemHeight,
           decoration: BoxDecoration(
-            color: isSelected ? activeColor.withOpacity(0.1) : Colors.transparent,
+            color: isSelected
+                ? activeColor.withOpacity(0.1)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
-            mainAxisAlignment: isCollapsed ? MainAxisAlignment.center : MainAxisAlignment.start,
+            mainAxisAlignment: isCollapsed
+                ? MainAxisAlignment.center
+                : MainAxisAlignment.start,
             children: [
-              const SizedBox(width: 12),
+              SizedBox(width: layout.leadingPadding),
               Icon(
                 isSelected ? destination.activeIcon : destination.icon,
-                color: isSelected ? activeColor : theme.colorScheme.onSurface.withOpacity(0.6),
-                size: 24,
+                color: isSelected
+                    ? activeColor
+                    : theme.colorScheme.onSurface.withOpacity(0.6),
+                size: layout.iconSize,
               ),
               if (!isCollapsed) ...[
-                const SizedBox(width: 16),
-                Text(
-                  destination.label,
-                  style: TextStyle(
-                    color: isSelected ? activeColor : theme.colorScheme.onSurface.withOpacity(0.8),
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    fontSize: 14,
+                SizedBox(width: layout.iconLabelSpacing),
+                Expanded(
+                  child: Text(
+                    destination.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isSelected
+                          ? activeColor
+                          : theme.colorScheme.onSurface.withOpacity(0.8),
+                      fontWeight: isSelected
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                      fontSize: layout.labelFontSize,
+                    ),
                   ),
                 ),
               ],
@@ -311,6 +404,105 @@ class _SidebarItem extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _SidebarLayout {
+  final double width;
+  final double logoSize;
+  final double labelFontSize;
+  final double iconSize;
+  final double itemHeight;
+  final double leadingPadding;
+  final double iconLabelSpacing;
+  final double itemOuterHorizontalPadding;
+  final double itemOuterVerticalPadding;
+  final double horizontalPadding;
+  final double topSpacing;
+  final double logoBottomSpacing;
+  final double footerBottomSpacing;
+
+  const _SidebarLayout({
+    required this.width,
+    required this.logoSize,
+    required this.labelFontSize,
+    required this.iconSize,
+    required this.itemHeight,
+    required this.leadingPadding,
+    required this.iconLabelSpacing,
+    required this.itemOuterHorizontalPadding,
+    required this.itemOuterVerticalPadding,
+    required this.horizontalPadding,
+    required this.topSpacing,
+    required this.logoBottomSpacing,
+    required this.footerBottomSpacing,
+  });
+
+  factory _SidebarLayout.fromViewport(
+    Size viewport, {
+    required bool isCollapsed,
+  }) {
+    final isMobilePlatform =
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+    final isCompactTabletSidebar =
+        !isCollapsed &&
+        isMobilePlatform &&
+        viewport.width >= 1100 &&
+        viewport.width <= 1280 &&
+        viewport.height <= 820;
+
+    if (isCollapsed) {
+      return const _SidebarLayout(
+        width: 76,
+        logoSize: 66,
+        labelFontSize: 14,
+        iconSize: 24,
+        itemHeight: 48,
+        leadingPadding: 12,
+        iconLabelSpacing: 16,
+        itemOuterHorizontalPadding: 12,
+        itemOuterVerticalPadding: 4,
+        horizontalPadding: 16,
+        topSpacing: 24,
+        logoBottomSpacing: 40,
+        footerBottomSpacing: 12,
+      );
+    }
+
+    if (isCompactTabletSidebar) {
+      return const _SidebarLayout(
+        width: 140,
+        logoSize: 72,
+        labelFontSize: 12,
+        iconSize: 20,
+        itemHeight: 42,
+        leadingPadding: 10,
+        iconLabelSpacing: 10,
+        itemOuterHorizontalPadding: 8,
+        itemOuterVerticalPadding: 3,
+        horizontalPadding: 10,
+        topSpacing: 16,
+        logoBottomSpacing: 20,
+        footerBottomSpacing: 8,
+      );
+    }
+
+    return const _SidebarLayout(
+      width: 232,
+      logoSize: 112,
+      labelFontSize: 16,
+      iconSize: 24,
+      itemHeight: 48,
+      leadingPadding: 12,
+      iconLabelSpacing: 16,
+      itemOuterHorizontalPadding: 12,
+      itemOuterVerticalPadding: 4,
+      horizontalPadding: 16,
+      topSpacing: 24,
+      logoBottomSpacing: 40,
+      footerBottomSpacing: 12,
     );
   }
 }
