@@ -259,9 +259,10 @@ type realRcuClient struct {
 
 	connMu sync.Mutex
 	conn   net.Conn
-	// pendingFrame stores a non-event frame that was read while draining
-	// trailing unsolicited events, so it can be consumed by the next request.
-	pendingFrame *rcuFrame
+
+	readerReplyCh    chan *rcuFrame
+	readerDeferredCh chan *rcuFrame
+	readerErrCh      chan error
 
 	mu sync.RWMutex
 
@@ -1634,26 +1635,25 @@ func (r *realRcuClient) startModbusSyncLoop() {
 }
 
 func (r *realRcuClient) drainEventsLockedConn(wait time.Duration) {
+	r.ensureReaderReadyLocked()
 	deadline := time.Now().Add(wait)
 	for {
-		if err := r.conn.SetReadDeadline(deadline); err != nil {
-			return
-		}
-		frame, err := r.readFrameLockedConn()
-		if err != nil {
-			if isTimeoutError(err) {
-				return
-			}
+		if err := r.pollReaderErrorLocked(); err != nil {
 			log.Printf("rcu.event.drain error room=%s error=%v", r.room, err)
 			r.closeConnLocked()
 			return
 		}
-		if frame.CmdType == 4 {
-			r.processEvent(frame)
-			continue
+		r.discardUnexpectedInboundLocked("event_drain")
+		if !time.Now().Before(deadline) {
+			return
 		}
-		r.stashPendingFrameLockedConn(frame)
-		return
+		sleepFor := 10 * time.Millisecond
+		if remaining := time.Until(deadline); remaining < sleepFor {
+			sleepFor = remaining
+		}
+		if sleepFor > 0 {
+			time.Sleep(sleepFor)
+		}
 	}
 }
 
@@ -1661,29 +1661,30 @@ func (r *realRcuClient) drainIncomingFramesLockedConn(wait time.Duration) error 
 	if r.conn == nil {
 		return nil
 	}
+	r.ensureReaderReadyLocked()
 	deadline := time.Now().Add(wait)
 	for {
-		if err := r.conn.SetReadDeadline(deadline); err != nil {
+		if err := r.pollReaderErrorLocked(); err != nil {
 			return err
 		}
-		frame, err := r.readFrameLockedConn()
-		if err != nil {
-			if isTimeoutError(err) {
-				return nil
-			}
-			return err
+		r.discardUnexpectedInboundLocked("incoming_drain")
+		if !time.Now().Before(deadline) {
+			return nil
 		}
-		if frame.CmdType == 4 {
-			r.processEvent(frame)
-			continue
+		sleepFor := 10 * time.Millisecond
+		if remaining := time.Until(deadline); remaining < sleepFor {
+			sleepFor = remaining
 		}
-		r.stashPendingFrameLockedConn(frame)
-		return nil
+		if sleepFor > 0 {
+			time.Sleep(sleepFor)
+		}
 	}
 }
 
 func (r *realRcuClient) sendModbusReadAndAwaitAckLocked(register int, count int, shortAddr int) (*modbusReadReturnEvent, error) {
 	msg := buildModbusReadRegisterMessage(register, count, shortAddr)
+	r.ensureReaderReadyLocked()
+	r.discardUnexpectedInboundLocked("before_modbus_read")
 	if err := r.conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		return nil, err
 	}
@@ -1692,27 +1693,33 @@ func (r *realRcuClient) sendModbusReadAndAwaitAckLocked(register int, count int,
 	}
 	// log.Printf("rcu.modbus.read room=%s reg=0x%X count=%d frame_hex=% X", r.room, register, count, msg)
 
-	deadline := time.Now().Add(5 * time.Second)
+	frame, err := r.waitForDeferredFrameLocked(5*time.Second, func(frame *rcuFrame) bool {
+		return frame.CmdNo == 7 && frame.SubCmdNo == 0
+	})
+	if err != nil {
+		r.closeConnLocked()
+		return nil, err
+	}
 	for {
-		if err := r.conn.SetReadDeadline(deadline); err != nil {
-			return nil, err
-		}
-		frame, err := r.readFrameLockedConn()
-		if err != nil {
-			return nil, err
-		}
-		if frame.CmdType != 4 {
-			continue
-		}
-		r.processEvent(frame)
-		if frame.CmdNo != 7 || frame.SubCmdNo != 0 {
-			continue
-		}
 		ev, ok := parseModbusReadReturnEvent(frame.Payload)
 		if !ok {
+			frame, err = r.waitForDeferredFrameLocked(5*time.Second, func(frame *rcuFrame) bool {
+				return frame.CmdNo == 7 && frame.SubCmdNo == 0
+			})
+			if err != nil {
+				r.closeConnLocked()
+				return nil, err
+			}
 			continue
 		}
 		if ev.ShortAddr != shortAddr || ev.StartReg != register {
+			frame, err = r.waitForDeferredFrameLocked(5*time.Second, func(frame *rcuFrame) bool {
+				return frame.CmdNo == 7 && frame.SubCmdNo == 0
+			})
+			if err != nil {
+				r.closeConnLocked()
+				return nil, err
+			}
 			continue
 		}
 		// log.Printf("rcu.modbus.read.ack room=%s short_addr=%d ack=0x%X start_reg=0x%X count=%d", r.room, ev.ShortAddr, ev.Ack, ev.StartReg, ev.Count)
@@ -1721,6 +1728,8 @@ func (r *realRcuClient) sendModbusReadAndAwaitAckLocked(register int, count int,
 }
 
 func (r *realRcuClient) sendModbusWriteAndAwaitAckLocked(msg []byte, shortAddr int) (*modbusWriteReturnEvent, error) {
+	r.ensureReaderReadyLocked()
+	r.discardUnexpectedInboundLocked("before_modbus_write")
 	if err := r.conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		return nil, err
 	}
@@ -1728,27 +1737,33 @@ func (r *realRcuClient) sendModbusWriteAndAwaitAckLocked(msg []byte, shortAddr i
 		return nil, err
 	}
 
-	deadline := time.Now().Add(5 * time.Second)
+	frame, err := r.waitForDeferredFrameLocked(5*time.Second, func(frame *rcuFrame) bool {
+		return frame.CmdNo == 7 && frame.SubCmdNo == 1
+	})
+	if err != nil {
+		r.closeConnLocked()
+		return nil, err
+	}
 	for {
-		if err := r.conn.SetReadDeadline(deadline); err != nil {
-			return nil, err
-		}
-		frame, err := r.readFrameLockedConn()
-		if err != nil {
-			return nil, err
-		}
-		if frame.CmdType != 4 {
-			continue
-		}
-		r.processEvent(frame)
-		if frame.CmdNo != 7 || frame.SubCmdNo != 1 {
-			continue
-		}
 		ev, ok := parseModbusWriteReturnEvent(frame.Payload)
 		if !ok {
+			frame, err = r.waitForDeferredFrameLocked(5*time.Second, func(frame *rcuFrame) bool {
+				return frame.CmdNo == 7 && frame.SubCmdNo == 1
+			})
+			if err != nil {
+				r.closeConnLocked()
+				return nil, err
+			}
 			continue
 		}
 		if ev.ShortAddr != shortAddr {
+			frame, err = r.waitForDeferredFrameLocked(5*time.Second, func(frame *rcuFrame) bool {
+				return frame.CmdNo == 7 && frame.SubCmdNo == 1
+			})
+			if err != nil {
+				r.closeConnLocked()
+				return nil, err
+			}
 			continue
 		}
 		return ev, nil
@@ -2010,7 +2025,11 @@ func (r *realRcuClient) ensureConnectedLocked() error {
 
 func (r *realRcuClient) ensureConnectedWithTimeoutLocked(timeout time.Duration) error {
 	if r.conn != nil {
-		return nil
+		r.ensureReaderReadyLocked()
+		if err := r.pollReaderErrorLocked(); err == nil {
+			return nil
+		}
+		r.closeConnLocked()
 	}
 	now := time.Now()
 	if now.Before(r.reconnectBlockedUntil) {
@@ -2058,6 +2077,7 @@ func (r *realRcuClient) ensureConnectedWithTimeoutLocked(timeout time.Duration) 
 		_ = tcp.SetNoDelay(true)
 	}
 	r.conn = conn
+	r.ensureReaderReadyLocked()
 	r.reconnectFailCount = 0
 	r.reconnectBlockedUntil = time.Time{}
 	log.Printf("rcu.connect room=%s host=%s port=%d", r.room, r.cfg.Host, r.cfg.Port)
@@ -2066,11 +2086,178 @@ func (r *realRcuClient) ensureConnectedWithTimeoutLocked(timeout time.Duration) 
 
 func (r *realRcuClient) closeConnLocked() {
 	if r.conn != nil {
-		_ = r.conn.Close()
+		conn := r.conn
 		r.conn = nil
-		r.pendingFrame = nil
+		r.readerReplyCh = nil
+		r.readerDeferredCh = nil
+		r.readerErrCh = nil
+		_ = conn.Close()
 		log.Printf("rcu.disconnect room=%s", r.room)
 	}
+}
+
+func (r *realRcuClient) ensureReaderReadyLocked() {
+	if r.conn == nil {
+		return
+	}
+	if r.readerReplyCh != nil && r.readerDeferredCh != nil && r.readerErrCh != nil {
+		return
+	}
+	r.readerReplyCh = make(chan *rcuFrame, 16)
+	r.readerDeferredCh = make(chan *rcuFrame, 16)
+	r.readerErrCh = make(chan error, 1)
+	r.startReaderLocked(r.conn, r.readerReplyCh, r.readerDeferredCh, r.readerErrCh)
+}
+
+func (r *realRcuClient) startReaderLocked(
+	conn net.Conn,
+	replyCh chan *rcuFrame,
+	deferredCh chan *rcuFrame,
+	errCh chan error,
+) {
+	go r.readerLoop(conn, replyCh, deferredCh, errCh)
+}
+
+func (r *realRcuClient) readerLoop(
+	conn net.Conn,
+	replyCh chan *rcuFrame,
+	deferredCh chan *rcuFrame,
+	errCh chan error,
+) {
+	for {
+		frame, err := readFrame(conn)
+		if err != nil {
+			if isClosedConnError(err) {
+				return
+			}
+			select {
+			case errCh <- err:
+			default:
+			}
+			return
+		}
+		if frame.CmdType == 4 {
+			r.processEvent(frame)
+			if isDeferredEventFrame(frame) {
+				deferredCh <- frame
+			}
+			continue
+		}
+		replyCh <- frame
+	}
+}
+
+func (r *realRcuClient) pollReaderErrorLocked() error {
+	if r.readerErrCh == nil {
+		return nil
+	}
+	select {
+	case err := <-r.readerErrCh:
+		return err
+	default:
+		return nil
+	}
+}
+
+func (r *realRcuClient) discardUnexpectedInboundLocked(context string) {
+	for {
+		if r.readerDeferredCh != nil {
+			select {
+			case frame := <-r.readerDeferredCh:
+				if frame != nil {
+					log.Printf(
+						"rcu.frame.discard room=%s context=%s deferred_cmdNo=%d deferred_subCmdNo=%d",
+						r.room,
+						context,
+						frame.CmdNo,
+						frame.SubCmdNo,
+					)
+				}
+				continue
+			default:
+				return
+			}
+		}
+		return
+	}
+}
+
+func (r *realRcuClient) waitForReplyFrameLocked(timeout time.Duration) (*rcuFrame, error) {
+	if r.readerReplyCh == nil {
+		return nil, fmt.Errorf("reader reply channel is nil")
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for {
+		if err := r.pollReaderErrorLocked(); err != nil {
+			return nil, err
+		}
+		select {
+		case frame := <-r.readerReplyCh:
+			if frame == nil {
+				continue
+			}
+			return frame, nil
+		case frame := <-r.readerDeferredCh:
+			if frame != nil {
+				log.Printf(
+					"rcu.frame.defer_ignored room=%s cmdNo=%d subCmdNo=%d while=reply_wait",
+					r.room,
+					frame.CmdNo,
+					frame.SubCmdNo,
+				)
+			}
+		case err := <-r.readerErrCh:
+			return nil, err
+		case <-timer.C:
+			return nil, fmt.Errorf("i/o timeout waiting for reply frame after %s", timeout)
+		}
+	}
+}
+
+func (r *realRcuClient) waitForDeferredFrameLocked(
+	timeout time.Duration,
+	matcher func(*rcuFrame) bool,
+) (*rcuFrame, error) {
+	if r.readerDeferredCh == nil {
+		return nil, fmt.Errorf("reader deferred channel is nil")
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for {
+		if err := r.pollReaderErrorLocked(); err != nil {
+			return nil, err
+		}
+		select {
+		case frame := <-r.readerDeferredCh:
+			if frame == nil {
+				continue
+			}
+			if matcher == nil || matcher(frame) {
+				return frame, nil
+			}
+		case frame := <-r.readerReplyCh:
+			if frame != nil {
+				return nil, fmt.Errorf(
+					"unexpected non-event frame while waiting for deferred event cmdType=%d cmdNo=%d subCmdNo=%d",
+					frame.CmdType,
+					frame.CmdNo,
+					frame.SubCmdNo,
+				)
+			}
+		case err := <-r.readerErrCh:
+			return nil, err
+		case <-timer.C:
+			return nil, fmt.Errorf("i/o timeout waiting for deferred event after %s", timeout)
+		}
+	}
+}
+
+func isDeferredEventFrame(frame *rcuFrame) bool {
+	if frame == nil || frame.CmdType != 4 {
+		return false
+	}
+	return frame.CmdNo == 7 && (frame.SubCmdNo == 0 || frame.SubCmdNo == 1)
 }
 
 func (r *realRcuClient) sendRequestLocked(msg []byte) (*rcuFrame, error) {
@@ -2081,85 +2268,26 @@ func (r *realRcuClient) sendRequestLockedWithTimeout(msg []byte, timeout time.Du
 	if r.conn == nil {
 		return nil, fmt.Errorf("rcu connection is nil")
 	}
+	r.ensureReaderReadyLocked()
 	if timeout <= 0 {
 		timeout = timeoutFor(opKindRefreshMisc)
 	}
 	if timeout > timeoutCap {
 		timeout = timeoutCap
 	}
-	if err := r.conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+	r.discardUnexpectedInboundLocked("before_request")
+	if err := r.conn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
 		return nil, err
 	}
 	if _, err := r.conn.Write(msg); err != nil {
 		return nil, err
 	}
-	for {
-		frame, err := r.readFrameLockedConn()
-		if err != nil {
-			return nil, err
-		}
-		if frame.CmdType == 4 {
-			r.processEvent(frame)
-			continue
-		}
-		r.drainTrailingEventFramesLockedConn()
-		return frame, nil
+	frame, err := r.waitForReplyFrameLocked(timeout)
+	if err != nil {
+		r.closeConnLocked()
+		return nil, err
 	}
-}
-
-func (r *realRcuClient) readFrameLockedConn() (*rcuFrame, error) {
-	if r.pendingFrame != nil {
-		frame := r.pendingFrame
-		r.pendingFrame = nil
-		return frame, nil
-	}
-	return readFrame(r.conn)
-}
-
-func (r *realRcuClient) stashPendingFrameLockedConn(frame *rcuFrame) {
-	if frame == nil {
-		return
-	}
-	if r.pendingFrame == nil {
-		r.pendingFrame = frame
-		return
-	}
-	log.Printf(
-		"rcu.frame.pending_overwrite room=%s old_cmdType=%d old_cmdNo=%d old_subCmdNo=%d new_cmdType=%d new_cmdNo=%d new_subCmdNo=%d",
-		r.room,
-		r.pendingFrame.CmdType,
-		r.pendingFrame.CmdNo,
-		r.pendingFrame.SubCmdNo,
-		frame.CmdType,
-		frame.CmdNo,
-		frame.SubCmdNo,
-	)
-	r.pendingFrame = frame
-}
-
-func (r *realRcuClient) drainTrailingEventFramesLockedConn() {
-	if r.conn == nil {
-		return
-	}
-	for {
-		if err := r.conn.SetReadDeadline(time.Now()); err != nil {
-			return
-		}
-		frame, err := r.readFrameLockedConn()
-		if err != nil {
-			if isTimeoutError(err) {
-				return
-			}
-			log.Printf("rcu.event.trailing_drain error room=%s error=%v", r.room, err)
-			return
-		}
-		if frame.CmdType == 4 {
-			r.processEvent(frame)
-			continue
-		}
-		r.stashPendingFrameLockedConn(frame)
-		return
-	}
+	return frame, nil
 }
 
 func (r *realRcuClient) sendCommandNoResponseLocked(msg []byte) error {
@@ -2170,12 +2298,14 @@ func (r *realRcuClient) sendCommandNoResponseLockedWithTimeout(msg []byte, timeo
 	if r.conn == nil {
 		return fmt.Errorf("rcu connection is nil")
 	}
+	r.ensureReaderReadyLocked()
 	if timeout <= 0 {
 		timeout = sceneWriteOnlyTimeout
 	}
 	if timeout > timeoutCap {
 		timeout = timeoutCap
 	}
+	r.discardUnexpectedInboundLocked("before_fire_and_forget")
 	if err := r.conn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
 		return err
 	}
@@ -3124,4 +3254,15 @@ func isTimeoutError(err error) bool {
 		return true
 	}
 	return strings.Contains(strings.ToLower(err.Error()), "i/o timeout")
+}
+
+func isClosedConnError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "use of closed network connection")
 }

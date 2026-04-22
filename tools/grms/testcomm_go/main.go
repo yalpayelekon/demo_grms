@@ -1232,8 +1232,12 @@ func (s *TestCommServer) buildSnapshotWithFallback(room string, rcu RcuClient) (
 	if rcu.InitializeAndUpdate() {
 		snapshot := rcu.Snapshot(s.serviceStore.EventsForRoom(room))
 		withMeta := cloneMap(snapshot)
+		source := "live"
+		if s.simulatorEnabled {
+			source = "simulator"
+		}
 		withMeta["_meta"] = map[string]interface{}{
-			"source":    "live",
+			"source":    source,
 			"stale":     false,
 			"updatedAt": time.Now().UTC().Format(time.RFC3339),
 		}
