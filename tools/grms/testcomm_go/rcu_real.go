@@ -84,17 +84,27 @@ var thermostatBootstrapRegisters = []int{
 }
 
 var (
-	timingThresholdOnce sync.Once
-	timingThreshold     time.Duration
-	queueSizeOnce       sync.Once
-	queueSizeValue      int
-	queueRetryOnce      sync.Once
-	queueRetryEnabled   bool
-	queueRetryMax       int
-	pollingLogsOnce     sync.Once
-	pollingLogsEnabled  bool
-	neverCloseConnOnce  sync.Once
-	neverCloseConnValue bool
+	timingThresholdOnce           sync.Once
+	timingThreshold               time.Duration
+	queueSizeOnce                 sync.Once
+	queueSizeValue                int
+	readerReplyQueueSizeOnce      sync.Once
+	readerReplyQueueSizeValue     int
+	readerDeferredQueueSizeOnce   sync.Once
+	readerDeferredQueueSizeValue  int
+	readerOverflowQueueSizeOnce   sync.Once
+	readerOverflowQueueSizeValue  int
+	readerDropLogIntervalOnce     sync.Once
+	readerDropLogIntervalValue    time.Duration
+	readerResetOnCriticalDropOnce sync.Once
+	readerResetOnCriticalDrop     bool
+	queueRetryOnce                sync.Once
+	queueRetryEnabled             bool
+	queueRetryMax                 int
+	pollingLogsOnce               sync.Once
+	pollingLogsEnabled            bool
+	neverCloseConnOnce            sync.Once
+	neverCloseConnValue           bool
 )
 
 type queuedCommandKind string
@@ -314,6 +324,10 @@ type realRcuClient struct {
 	latestSceneSeq        atomic.Uint64
 	latestSceneNumber     atomic.Int32
 	sceneCoalescingActive bool
+
+	readerDeferredDropCount atomic.Uint64
+	readerReplyDropCount    atomic.Uint64
+	readerDropLastLogAtNs   atomic.Int64
 
 	reconnectFailCount    int
 	reconnectBlockedUntil time.Time
@@ -2165,8 +2179,8 @@ func (r *realRcuClient) ensureReaderReadyLocked() {
 	if r.readerReplyCh != nil && r.readerDeferredCh != nil && r.readerErrCh != nil {
 		return
 	}
-	r.readerReplyCh = make(chan *rcuFrame, 16)
-	r.readerDeferredCh = make(chan *rcuFrame, 16)
+	r.readerReplyCh = make(chan *rcuFrame, readerReplyQueueSize())
+	r.readerDeferredCh = make(chan *rcuFrame, readerDeferredQueueSize())
 	r.readerErrCh = make(chan error, 1)
 	r.startReaderLocked(r.conn, r.readerReplyCh, r.readerDeferredCh, r.readerErrCh)
 }
@@ -2186,7 +2200,25 @@ func (r *realRcuClient) readerLoop(
 	deferredCh chan *rcuFrame,
 	errCh chan error,
 ) {
+	pendingReplies := make([]*rcuFrame, 0, readerOverflowQueueSize())
+
+	flushPendingReply := func() bool {
+		if len(pendingReplies) == 0 {
+			return false
+		}
+		select {
+		case replyCh <- pendingReplies[0]:
+			pendingReplies[0] = nil
+			pendingReplies = pendingReplies[1:]
+			return true
+		default:
+			return false
+		}
+	}
+
 	for {
+		for flushPendingReply() {
+		}
 		frame, err := readFrame(conn)
 		if err != nil {
 			if isClosedConnError(err) {
@@ -2203,12 +2235,90 @@ func (r *realRcuClient) readerLoop(
 		if frame.CmdType == 4 {
 			r.processEvent(frame)
 			if isDeferredEventFrame(frame) {
-				deferredCh <- frame
+				select {
+				case deferredCh <- frame:
+				default:
+					r.recordReaderDrop("deferred", frame, false)
+				}
 			}
 			continue
 		}
-		replyCh <- frame
+		select {
+		case replyCh <- frame:
+			continue
+		default:
+		}
+		if len(pendingReplies) < cap(pendingReplies) {
+			pendingReplies = append(pendingReplies, frame)
+			r.recordReaderOverflowEnqueue(frame, len(pendingReplies), cap(pendingReplies))
+			continue
+		}
+
+		r.recordReaderDrop("reply", frame, true)
+		if readerResetOnCriticalDropEnabled() {
+			resetErr := fmt.Errorf(
+				"critical reply queue overflow room=%s cmdNo=%d subCmdNo=%d",
+				r.room,
+				frame.CmdNo,
+				frame.SubCmdNo,
+			)
+			select {
+			case errCh <- resetErr:
+			default:
+			}
+			log.Printf("rcu.reader.reset room=%s reason=critical_reply_overflow", r.room)
+			return
+		}
 	}
+}
+
+func (r *realRcuClient) shouldLogReaderDropNow() bool {
+	now := time.Now()
+	interval := readerDropLogInterval()
+	last := time.Unix(0, r.readerDropLastLogAtNs.Load())
+	if !last.IsZero() && now.Sub(last) < interval {
+		return false
+	}
+	r.readerDropLastLogAtNs.Store(now.UnixNano())
+	return true
+}
+
+func (r *realRcuClient) recordReaderOverflowEnqueue(frame *rcuFrame, size, max int) {
+	if !r.shouldLogReaderDropNow() {
+		return
+	}
+	log.Printf(
+		"rcu.reader.overflow room=%s queue=%d/%d cmdType=%d cmdNo=%d subCmdNo=%d",
+		r.room,
+		size,
+		max,
+		frame.CmdType,
+		frame.CmdNo,
+		frame.SubCmdNo,
+	)
+}
+
+func (r *realRcuClient) recordReaderDrop(channel string, frame *rcuFrame, critical bool) {
+	var count uint64
+	switch channel {
+	case "reply":
+		count = r.readerReplyDropCount.Add(1)
+	default:
+		count = r.readerDeferredDropCount.Add(1)
+	}
+	if !r.shouldLogReaderDropNow() {
+		return
+	}
+	log.Printf(
+		"rcu.reader.drop room=%s channel=%s critical=%t count=%d cmdType=%d cmdNo=%d subCmdNo=%d",
+		r.room,
+		channel,
+		critical,
+		count,
+		frame.CmdType,
+		frame.CmdNo,
+		frame.SubCmdNo,
+	)
 }
 
 func (r *realRcuClient) pollReaderErrorLocked() error {
@@ -2437,6 +2547,82 @@ func commandQueueSize() int {
 		queueSizeValue = v
 	})
 	return queueSizeValue
+}
+
+func readerReplyQueueSize() int {
+	readerReplyQueueSizeOnce.Do(func() {
+		readerReplyQueueSizeValue = 16
+		raw := strings.TrimSpace(os.Getenv("TESTCOMM_RCU_REPLY_QUEUE_SIZE"))
+		if raw == "" {
+			return
+		}
+		v, err := strconv.Atoi(raw)
+		if err != nil || v <= 0 {
+			return
+		}
+		readerReplyQueueSizeValue = v
+	})
+	return readerReplyQueueSizeValue
+}
+
+func readerDeferredQueueSize() int {
+	readerDeferredQueueSizeOnce.Do(func() {
+		readerDeferredQueueSizeValue = 16
+		raw := strings.TrimSpace(os.Getenv("TESTCOMM_RCU_DEFERRED_QUEUE_SIZE"))
+		if raw == "" {
+			return
+		}
+		v, err := strconv.Atoi(raw)
+		if err != nil || v <= 0 {
+			return
+		}
+		readerDeferredQueueSizeValue = v
+	})
+	return readerDeferredQueueSizeValue
+}
+
+func readerOverflowQueueSize() int {
+	readerOverflowQueueSizeOnce.Do(func() {
+		readerOverflowQueueSizeValue = 32
+		raw := strings.TrimSpace(os.Getenv("TESTCOMM_RCU_REPLY_OVERFLOW_QUEUE_SIZE"))
+		if raw == "" {
+			return
+		}
+		v, err := strconv.Atoi(raw)
+		if err != nil || v <= 0 {
+			return
+		}
+		readerOverflowQueueSizeValue = v
+	})
+	return readerOverflowQueueSizeValue
+}
+
+func readerDropLogInterval() time.Duration {
+	readerDropLogIntervalOnce.Do(func() {
+		readerDropLogIntervalValue = 10 * time.Second
+		raw := strings.TrimSpace(os.Getenv("TESTCOMM_RCU_READER_DROP_LOG_INTERVAL_MS"))
+		if raw == "" {
+			return
+		}
+		ms, err := strconv.Atoi(raw)
+		if err != nil || ms <= 0 {
+			return
+		}
+		readerDropLogIntervalValue = time.Duration(ms) * time.Millisecond
+	})
+	return readerDropLogIntervalValue
+}
+
+func readerResetOnCriticalDropEnabled() bool {
+	readerResetOnCriticalDropOnce.Do(func() {
+		readerResetOnCriticalDrop = true
+		raw := strings.TrimSpace(os.Getenv("TESTCOMM_RCU_RESET_ON_CRITICAL_REPLY_DROP"))
+		if raw == "" {
+			return
+		}
+		readerResetOnCriticalDrop = raw == "1" || strings.EqualFold(raw, "true")
+	})
+	return readerResetOnCriticalDrop
 }
 
 func commandRetryEnabled() bool {
