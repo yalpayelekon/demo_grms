@@ -2598,7 +2598,7 @@ func matcherFromRequest(msg []byte, name string) *frameMatcher {
 	if len(msg) < 6 {
 		return nil
 	}
-	cmdType := int(msg[1])
+	cmdType := int(msg[3])
 	cmdNo := int(msg[4])
 	subCmdNo := int(msg[5])
 	return &frameMatcher{
