@@ -2578,6 +2578,16 @@ func (r *realRcuClient) waitForDeferredFrameLocked(
 			unmatched = append(unmatched, frame)
 		case frame := <-r.readerReplyCh:
 			if frame != nil {
+				if isControlAckFrame(frame) {
+					log.Printf(
+						"rcu.frame.reply_ignored room=%s while=deferred_wait cmdType=%d cmdNo=%d subCmdNo=%d reason=control_ack",
+						r.room,
+						frame.CmdType,
+						frame.CmdNo,
+						frame.SubCmdNo,
+					)
+					continue
+				}
 				return nil, fmt.Errorf(
 					"unexpected non-event frame while waiting for deferred event cmdType=%d cmdNo=%d subCmdNo=%d",
 					frame.CmdType,
@@ -2592,6 +2602,13 @@ func (r *realRcuClient) waitForDeferredFrameLocked(
 			return nil, fmt.Errorf("i/o timeout waiting for deferred event after %s", timeout)
 		}
 	}
+}
+
+func isControlAckFrame(frame *rcuFrame) bool {
+	if frame == nil {
+		return false
+	}
+	return frame.CmdType == 0x03 && frame.CmdNo == 0x00 && frame.SubCmdNo == 0x00
 }
 
 func (r *realRcuClient) requeueReplyFramesLocked(context string, frames []*rcuFrame) {
