@@ -84,6 +84,25 @@ var thermostatBootstrapRegisters = []int{
 	hvacRegRunningStatus,
 }
 
+var modbusPollCriticalRegisters = []int{
+	hvacRegOnOff,
+	hvacRegRunningStatus,
+	hvacRegOccupancyInput,
+}
+
+var modbusPollNormalRegisters = []int{
+	hvacRegRoomTemperature,
+	hvacRegSetPoint,
+	hvacRegMode,
+	hvacRegFanMode,
+	hvacRegLowerSetpoint,
+	hvacRegUpperSetpoint,
+}
+
+var modbusPollSlowRegisters = []int{
+	hvacRegKeylock,
+}
+
 var (
 	timingThresholdOnce           sync.Once
 	timingThreshold               time.Duration
@@ -106,6 +125,8 @@ var (
 	pollingLogsEnabled            bool
 	neverCloseConnOnce            sync.Once
 	neverCloseConnValue           bool
+	modbusSyncEnabledOnce         sync.Once
+	modbusSyncEnabledValue        bool
 )
 
 type queuedCommandKind string
@@ -1503,9 +1524,13 @@ func (r *realRcuClient) initializeLockedConn() error {
 
 	r.initialized = true
 	log.Printf("rcu.initialized room=%s outputs=%d", r.room, len(r.outputs))
-	r.bootstrapThermostatRegistersLockedConn()
-	// Keep HVAC communication health fresh so comError is cleared when reads recover.
-	r.startModbusSyncLoop()
+	if modbusSyncEnabled() {
+		r.bootstrapThermostatRegistersLockedConn()
+		// Keep HVAC communication health fresh so comError is cleared when reads recover.
+		r.startModbusSyncLoop()
+	} else {
+		log.Printf("rcu.modbus.sync disabled room=%s reason=protocol_guard", r.room)
+	}
 	return nil
 }
 
@@ -1693,7 +1718,44 @@ func (r *realRcuClient) bootstrapThermostatRegistersLockedConn() {
 func (r *realRcuClient) startModbusSyncLoop() {
 	r.syncLoopOnce.Do(func() {
 		go func() {
-			ticker := time.NewTicker(3 * time.Second)
+			criticalEvery := modbusPollInterval("TESTCOMM_MODBUS_POLL_CRITICAL_MS", 5*time.Second)
+			normalEvery := modbusPollInterval("TESTCOMM_MODBUS_POLL_NORMAL_MS", 15*time.Second)
+			slowEvery := modbusPollInterval("TESTCOMM_MODBUS_POLL_SLOW_MS", 45*time.Second)
+			maxBackoff := modbusPollInterval("TESTCOMM_MODBUS_POLL_BACKOFF_MAX_MS", 60*time.Second)
+
+			type pollGroup struct {
+				name       string
+				registers  []int
+				baseEvery  time.Duration
+				currentGap time.Duration
+				nextDue    time.Time
+			}
+			groups := []*pollGroup{
+				{
+					name:       "critical",
+					registers:  modbusPollCriticalRegisters,
+					baseEvery:  criticalEvery,
+					currentGap: criticalEvery,
+				},
+				{
+					name:       "normal",
+					registers:  modbusPollNormalRegisters,
+					baseEvery:  normalEvery,
+					currentGap: normalEvery,
+				},
+				{
+					name:       "slow",
+					registers:  modbusPollSlowRegisters,
+					baseEvery:  slowEvery,
+					currentGap: slowEvery,
+				},
+			}
+			now := time.Now()
+			for _, group := range groups {
+				group.nextDue = now.Add(group.currentGap)
+			}
+
+			ticker := time.NewTicker(1 * time.Second)
 			defer ticker.Stop()
 			for range ticker.C {
 				r.connMu.Lock()
@@ -1702,23 +1764,48 @@ func (r *realRcuClient) startModbusSyncLoop() {
 					continue
 				}
 				r.drainEventsLockedConn(200 * time.Millisecond)
-				for _, reg := range thermostatBootstrapRegisters {
-					ev, err := r.sendModbusReadAndAwaitAckLocked(reg, 1, modbusDeviceShortAddr)
-					if err != nil {
-						// log.Printf("rcu.modbus.poll.read failed room=%s reg=0x%X error=%v", r.room, reg, err)
-						r.setHvacComError(1)
-						if shouldCloseConnectionForModbusError(err) {
-							r.closeConnLocked()
-						}
-						break
-					}
-					if ev.Ack != modbusAckOK {
-						// log.Printf("rcu.modbus.poll.read nack room=%s reg=0x%X ack=0x%X", r.room, reg, ev.Ack)
-						r.setHvacComError(1)
+				now := time.Now()
+				for _, group := range groups {
+					if now.Before(group.nextDue) {
 						continue
 					}
-					r.setHvacComError(0)
-					r.applyModbusReadReturnEvent(ev)
+					ok := true
+					for _, reg := range group.registers {
+						ev, err := r.sendModbusReadAndAwaitAckLocked(reg, 1, modbusDeviceShortAddr)
+						if err != nil {
+							r.setHvacComError(1)
+							if shouldCloseConnectionForModbusError(err) {
+								r.closeConnLocked()
+							}
+							ok = false
+							logPollingf("rcu.modbus.poll failed room=%s group=%s reg=0x%X error=%v", r.room, group.name, reg, err)
+							break
+						}
+						if ev.Ack != modbusAckOK {
+							r.setHvacComError(1)
+							ok = false
+							logPollingf("rcu.modbus.poll nack room=%s group=%s reg=0x%X ack=0x%X", r.room, group.name, reg, ev.Ack)
+							break
+						}
+						r.setHvacComError(0)
+						r.applyModbusReadReturnEvent(ev)
+					}
+					if ok {
+						group.currentGap = group.baseEvery
+					} else {
+						group.currentGap *= 2
+						if group.currentGap > maxBackoff {
+							group.currentGap = maxBackoff
+						}
+					}
+					group.nextDue = now.Add(group.currentGap)
+					logPollingf(
+						"rcu.modbus.poll schedule room=%s group=%s nextInMs=%d ok=%t",
+						r.room,
+						group.name,
+						group.currentGap.Milliseconds(),
+						ok,
+					)
 				}
 				r.connMu.Unlock()
 			}
@@ -3692,6 +3779,26 @@ func neverCloseConnection() bool {
 		neverCloseConnValue = raw == "1" || strings.EqualFold(raw, "true")
 	})
 	return neverCloseConnValue
+}
+
+func modbusSyncEnabled() bool {
+	modbusSyncEnabledOnce.Do(func() {
+		raw := strings.TrimSpace(os.Getenv("TESTCOMM_ENABLE_MODBUS_SYNC"))
+		modbusSyncEnabledValue = raw == "1" || strings.EqualFold(raw, "true")
+	})
+	return modbusSyncEnabledValue
+}
+
+func modbusPollInterval(envKey string, defaultValue time.Duration) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(envKey))
+	if raw == "" {
+		return defaultValue
+	}
+	ms, err := strconv.Atoi(raw)
+	if err != nil || ms <= 0 {
+		return defaultValue
+	}
+	return time.Duration(ms) * time.Millisecond
 }
 
 func shouldCloseConnectionForModbusError(err error) bool {
