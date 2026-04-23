@@ -2587,7 +2587,10 @@ func (r *realRcuClient) sendRequestLockedWithTimeoutAndMatcher(
 	frame, err := r.waitForMatchingReplyFrameLocked(timeout, matcher)
 	if err != nil {
 		if shouldCloseConnectionForRequestError(err) {
+			log.Printf("rcu.request.error room=%s action=close_connection err=%v", r.room, err)
 			r.closeConnLocked()
+		} else {
+			log.Printf("rcu.request.error room=%s action=keep_connection err=%v", r.room, err)
 		}
 		return nil, err
 	}
@@ -3702,7 +3705,7 @@ func shouldCloseConnectionForRequestError(err error) bool {
 	if neverCloseConnection() {
 		return false
 	}
-	return !isTimeoutError(err)
+	return isHardSocketError(err)
 }
 
 func isClosedConnError(err error) bool {
@@ -3714,4 +3717,25 @@ func isClosedConnError(err error) bool {
 	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "use of closed network connection")
+}
+
+func isHardSocketError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if isTimeoutError(err) {
+		return false
+	}
+	if isClosedConnError(err) {
+		return true
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "no route to host") ||
+		strings.Contains(msg, "network is unreachable")
 }
