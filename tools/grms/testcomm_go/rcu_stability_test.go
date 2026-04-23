@@ -34,7 +34,7 @@ func TestRefreshBudgetProcessesOnlyConfiguredBatch(t *testing.T) {
 	r := newRealRcuClient("Demo 101", RcuConfig{Host: "127.0.0.1", Port: 5556})
 	t.Cleanup(r.stopCommandWorker)
 	r.initialized.Store(true)
-	r.conn = &fakeConn{readBuf: bytes.NewBuffer(buildReplyFrames(24))}
+	r.eventConn = &fakeConn{readBuf: bytes.NewBuffer(buildReplyFrames(24))}
 
 	r.mu.Lock()
 	for i := 1; i <= 6; i++ {
@@ -61,7 +61,7 @@ func TestRefreshCursorWrapsAcrossCycles(t *testing.T) {
 	r := newRealRcuClient("Demo 101", RcuConfig{Host: "127.0.0.1", Port: 5556})
 	t.Cleanup(r.stopCommandWorker)
 	r.initialized.Store(true)
-	r.conn = &fakeConn{readBuf: bytes.NewBuffer(buildReplyFrames(48))}
+	r.eventConn = &fakeConn{readBuf: bytes.NewBuffer(buildReplyFrames(48))}
 
 	r.mu.Lock()
 	for i := 1; i <= 6; i++ {
@@ -176,7 +176,7 @@ func TestSceneAcceptedModeRemainsDefault(t *testing.T) {
 	t.Setenv("TESTCOMM_SCENE_REQUIRE_RESPONSE", "")
 	r := newRealRcuClient("Demo 101", RcuConfig{Host: "127.0.0.1", Port: 5556})
 	t.Cleanup(r.stopCommandWorker)
-	r.conn = &fakeConn{readBuf: bytes.NewBuffer(nil)}
+	r.writeConn = &fakeConn{readBuf: bytes.NewBuffer(nil)}
 
 	resp, err := r.doCallLightingScene(2)
 	if err != nil {
