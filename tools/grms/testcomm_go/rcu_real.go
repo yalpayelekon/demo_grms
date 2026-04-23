@@ -363,6 +363,8 @@ type realRcuClient struct {
 	lastSceneAt atomic.Int64
 
 	syncLoopOnce sync.Once
+	modbusStop   chan struct{}
+	modbusStopM  sync.Once
 
 	cmdQueue   chan queuedCommand
 	queueOnce  sync.Once
@@ -400,6 +402,7 @@ func newRealRcuClient(room string, cfg RcuConfig) *realRcuClient {
 		murState:                murPassive,
 		outputs:                 make(map[int]*outputDeviceState),
 		daliLineStatusSupported: true,
+		modbusStop:              make(chan struct{}),
 		cmdQueue:                make(chan queuedCommand, commandQueueSize()),
 		queueStop:               make(chan struct{}),
 		priorityOpCh:            make(chan opRequest, 64),
@@ -426,6 +429,9 @@ func newRealRcuClient(room string, cfg RcuConfig) *realRcuClient {
 func (r *realRcuClient) Room() string { return r.room }
 
 func (r *realRcuClient) Shutdown() {
+	r.modbusStopM.Do(func() {
+		close(r.modbusStop)
+	})
 	r.stopCommandWorker()
 	r.connMu.Lock()
 	defer r.connMu.Unlock()
@@ -1757,7 +1763,12 @@ func (r *realRcuClient) startModbusSyncLoop() {
 
 			ticker := time.NewTicker(1 * time.Second)
 			defer ticker.Stop()
-			for range ticker.C {
+			for {
+				select {
+				case <-r.modbusStop:
+					return
+				case <-ticker.C:
+				}
 				r.connMu.Lock()
 				if err := r.ensureConnectedLocked(); err != nil {
 					r.connMu.Unlock()
