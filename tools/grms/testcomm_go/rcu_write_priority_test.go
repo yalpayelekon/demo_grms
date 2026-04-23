@@ -74,7 +74,7 @@ func TestSceneReturnsTimeoutWhenNoResponse(t *testing.T) {
 	t.Setenv("TESTCOMM_SCENE_REQUIRE_RESPONSE", "1")
 	r := newRealRcuClient("Demo 101", RcuConfig{Host: "127.0.0.1", Port: 5556})
 	t.Cleanup(r.stopCommandWorker)
-	r.conn = &fakeConn{readErr: timeoutErr{}}
+	r.writeConn = &fakeConn{readErr: timeoutErr{}}
 
 	_, err := r.doCallLightingScene(1)
 	if err == nil {
@@ -119,7 +119,7 @@ func TestSceneResponseStatusConfirmedContainsConfirmedAt(t *testing.T) {
 	t.Setenv("TESTCOMM_SCENE_REQUIRE_RESPONSE", "1")
 	r := newRealRcuClient("Demo 101", RcuConfig{Host: "127.0.0.1", Port: 5556})
 	t.Cleanup(r.stopCommandWorker)
-	r.conn = &fakeConn{readBuf: bytes.NewBuffer(buildFrameBytes(3, 4, 3))}
+	r.writeConn = &fakeConn{readBuf: bytes.NewBuffer(buildFrameBytes(3, 4, 3))}
 
 	resp, err := r.doCallLightingScene(2)
 	if err != nil {
@@ -140,7 +140,7 @@ func TestSceneResponseStatusAcceptedInFastMode(t *testing.T) {
 	t.Setenv("TESTCOMM_SCENE_REQUIRE_RESPONSE", "0")
 	r := newRealRcuClient("Demo 101", RcuConfig{Host: "127.0.0.1", Port: 5556})
 	t.Cleanup(r.stopCommandWorker)
-	r.conn = &fakeConn{readBuf: bytes.NewBuffer(nil)}
+	r.writeConn = &fakeConn{readBuf: bytes.NewBuffer(nil)}
 
 	resp, err := r.doCallLightingScene(2)
 	if err != nil {

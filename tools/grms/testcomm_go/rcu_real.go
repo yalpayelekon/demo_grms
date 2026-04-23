@@ -324,12 +324,22 @@ type hvacState struct {
 	Fidelio            *int
 }
 
+type connChannel string
+
+const (
+	connChannelEvent  connChannel = "event"
+	connChannelWrite  connChannel = "write"
+	connChannelModbus connChannel = "modbus"
+)
+
 type realRcuClient struct {
 	room string
 	cfg  RcuConfig
 
-	connMu sync.Mutex
-	conn   net.Conn
+	connMu     sync.Mutex
+	eventConn  net.Conn
+	writeConn  net.Conn
+	modbusConn net.Conn
 
 	readerReplyCh    chan *rcuFrame
 	readerDeferredCh chan *rcuFrame
@@ -433,7 +443,9 @@ func (r *realRcuClient) Shutdown() {
 	r.stopCommandWorker()
 	r.connMu.Lock()
 	defer r.connMu.Unlock()
-	r.closeConnLocked()
+	r.closeConnForChannelLocked(connChannelEvent)
+	r.closeConnForChannelLocked(connChannelWrite)
+	r.closeConnForChannelLocked(connChannelModbus)
 }
 
 func (r *realRcuClient) InitializeAndUpdate() bool {
@@ -648,7 +660,7 @@ func (r *realRcuClient) UpdateHvac(updates map[string]interface{}) map[string]in
 
 	r.connMu.Lock()
 	defer r.connMu.Unlock()
-	if err := r.ensureConnectedLocked(); err != nil {
+	if err := r.ensureConnectedForChannelLocked(connChannelModbus); err != nil {
 		log.Printf("rcu.hvac connect failed room=%s error=%v", r.room, err)
 		return nil
 	}
@@ -659,7 +671,7 @@ func (r *realRcuClient) UpdateHvac(updates map[string]interface{}) map[string]in
 		ev, err := r.sendModbusWriteAndAwaitAckLocked(msg, modbusDeviceShortAddr)
 		if err != nil {
 			log.Printf("rcu.hvac write failed room=%s reg=0x%X value=%d error=%v", r.room, w[0], w[1], err)
-			r.closeConnLocked()
+			r.closeConnForChannelLocked(connChannelModbus)
 			return nil
 		}
 		// log.Printf("rcu.modbus.write.ack room=%s short_addr=%d ack=0x%X start_reg=0x%X count=%d", r.room, ev.ShortAddr, ev.Ack, ev.StartReg, ev.Count)
@@ -717,9 +729,9 @@ func (r *realRcuClient) doUpdateLightingLevel(address, level int) (map[string]in
 			} else {
 				msg = []byte{rcuHeader, 0x06, 0x00, 0x03, 0x04, 0x02, 0x00, byte(address), byte(percentToDaliLevel(level))}
 			}
-			if _, err := r.sendRequestLockedWithTimeout(msg, timeout); err != nil {
+			if _, err := r.sendWriteRequestLockedWithTimeout(msg, timeout); err != nil {
 				log.Printf("rcu.lighting set target failed room=%s address=%d level=%d error=%v", r.room, address, level, err)
-				r.closeConnLocked()
+				r.closeConnForChannelLocked(connChannelWrite)
 				return nil, err
 			}
 			log.Printf("cmd.sent room=%s kind=lighting_level address=%d level=%d", r.room, address, level)
@@ -807,7 +819,7 @@ func (r *realRcuClient) ExecuteRawCommand(frame []byte, requestID string) map[st
 				reply, err := r.sendRequestLockedWithTimeout(frame, timeout)
 				if err != nil {
 					log.Printf("rcu.raw.query failed room=%s error=%v frame_hex=% X", r.room, err, frame)
-					r.closeConnLocked()
+					r.closeConnForChannelLocked(connChannelEvent)
 					return nil, err
 				}
 				log.Printf(
@@ -834,7 +846,7 @@ func (r *realRcuClient) ExecuteRawCommand(frame []byte, requestID string) map[st
 			}
 			if err := r.sendCommandNoResponseLockedWithTimeout(frame, timeout); err != nil {
 				log.Printf("rcu.raw.trigger failed room=%s error=%v frame_hex=% X", r.room, err, frame)
-				r.closeConnLocked()
+				r.closeConnForChannelLocked(connChannelWrite)
 				return nil, err
 			}
 			// Treat raw scene-like writes as scene activity so refresh polling
@@ -901,15 +913,15 @@ func (r *realRcuClient) doCallLightingScene(scene int) (map[string]interface{}, 
 			metadata: fmt.Sprintf("scene=%d attempt=%d requireResponse=%t", scene, attempt, requireResponse),
 			exec: func(timeout time.Duration) (map[string]interface{}, error) {
 				if requireResponse {
-					if _, err := r.sendRequestLockedWithTimeout(msg, timeout); err != nil {
+					if _, err := r.sendWriteRequestLockedWithTimeout(msg, timeout); err != nil {
 						log.Printf("rcu.scene.trigger failed room=%s scene=%d error=%v", r.room, scene, err)
-						r.closeConnLocked()
+						r.closeConnForChannelLocked(connChannelWrite)
 						return nil, err
 					}
 				} else {
 					if err := r.sendCommandNoResponseLockedWithTimeout(msg, timeout); err != nil {
 						log.Printf("rcu.scene.trigger write failed room=%s scene=%d error=%v", r.room, scene, err)
-						r.closeConnLocked()
+						r.closeConnForChannelLocked(connChannelWrite)
 						return nil, err
 					}
 				}
@@ -1056,7 +1068,11 @@ func (r *realRcuClient) executeOperation(req opRequest) {
 	lockWaitMs := time.Since(lockWaitStartedAt).Milliseconds()
 	defer r.connMu.Unlock()
 
-	if err := r.ensureConnectedWithTimeoutLocked(connectTimeout); err != nil {
+	channel := connChannelEvent
+	if req.kind == opKindScene || req.kind == opKindLightingLevel {
+		channel = connChannelWrite
+	}
+	if err := r.ensureConnectedWithTimeoutForChannelLocked(channel, connectTimeout); err != nil {
 		req.resultCh <- opResult{err: err, lockWaitMs: lockWaitMs}
 		return
 	}
@@ -1067,7 +1083,7 @@ func (r *realRcuClient) executeOperation(req opRequest) {
 			log.Printf("rcu.op.timeout room=%s kind=%s error=%v", r.room, req.kind, err)
 		}
 		if shouldResetConnOnError(req.kind, err) {
-			r.closeConnLocked()
+			r.closeConnForChannelLocked(channel)
 		}
 		req.resultCh <- opResult{err: err, lockWaitMs: lockWaitMs}
 		return
@@ -1771,7 +1787,7 @@ func (r *realRcuClient) startModbusSyncLoop() {
 				case <-ticker.C:
 				}
 				r.connMu.Lock()
-				if err := r.ensureConnectedLocked(); err != nil {
+				if err := r.ensureConnectedForChannelLocked(connChannelModbus); err != nil {
 					r.connMu.Unlock()
 					continue
 				}
@@ -1787,7 +1803,7 @@ func (r *realRcuClient) startModbusSyncLoop() {
 						if err != nil {
 							r.setHvacComError(1)
 							if shouldCloseConnectionForModbusError(err) {
-								r.closeConnLocked()
+								r.closeConnForChannelLocked(connChannelModbus)
 							}
 							ok = false
 							logPollingf("rcu.modbus.poll failed room=%s group=%s reg=0x%X error=%v", r.room, group.name, reg, err)
@@ -1849,7 +1865,7 @@ func (r *realRcuClient) drainEventsLockedConn(wait time.Duration) {
 }
 
 func (r *realRcuClient) drainIncomingFramesLockedConn(wait time.Duration) error {
-	if r.conn == nil {
+	if r.eventConn == nil {
 		return nil
 	}
 	r.ensureReaderReadyLocked()
@@ -1874,91 +1890,73 @@ func (r *realRcuClient) drainIncomingFramesLockedConn(wait time.Duration) error 
 
 func (r *realRcuClient) sendModbusReadAndAwaitAckLocked(register int, count int, shortAddr int) (*modbusReadReturnEvent, error) {
 	msg := buildModbusReadRegisterMessage(register, count, shortAddr)
-	r.ensureReaderReadyLocked()
-	if r.conn == nil {
+	conn := r.connForChannelLocked(connChannelModbus)
+	if conn == nil {
 		return nil, fmt.Errorf("rcu connection is nil")
 	}
-	r.discardUnexpectedInboundLocked("before_modbus_read")
-	if err := r.conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+	if err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		return nil, err
 	}
-	if _, err := r.conn.Write(msg); err != nil {
+	if _, err := conn.Write(msg); err != nil {
 		return nil, err
 	}
-	// log.Printf("rcu.modbus.read room=%s reg=0x%X count=%d frame_hex=% X", r.room, register, count, msg)
-
-	frame, err := r.waitForDeferredFrameLocked(5*time.Second, func(frame *rcuFrame) bool {
-		if frame == nil || frame.CmdNo != 7 || frame.SubCmdNo != 0 {
-			return false
-		}
-		ev, ok := parseModbusReadReturnEvent(frame.Payload)
-		if !ok {
-			log.Printf("rcu.modbus.read.ignore room=%s reason=parse_failed payload_hex=% X", r.room, frame.Payload)
-			return false
-		}
-		if ev.ShortAddr != shortAddr || ev.StartReg != register || ev.Count != count {
-			log.Printf(
-				"rcu.modbus.read.ignore room=%s reason=unexpected_target expected_short=%d got_short=%d expected_reg=0x%X got_reg=0x%X expected_count=%d got_count=%d",
-				r.room, shortAddr, ev.ShortAddr, register, ev.StartReg, count, ev.Count,
-			)
-			return false
-		}
-		return true
-	})
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		return nil, err
+	}
+	frame, err := readFrame(conn)
 	if err != nil {
 		if shouldCloseConnectionForModbusError(err) {
-			r.closeConnLocked()
+			r.closeConnForChannelLocked(connChannelModbus)
 		}
 		return nil, err
+	}
+	if frame == nil || frame.CmdNo != 7 || frame.SubCmdNo != 0 {
+		return nil, fmt.Errorf("unexpected modbus read frame cmdType=%d cmdNo=%d subCmdNo=%d", frame.CmdType, frame.CmdNo, frame.SubCmdNo)
 	}
 	ev, ok := parseModbusReadReturnEvent(frame.Payload)
 	if !ok {
 		return nil, fmt.Errorf("invalid modbus read ack payload after matcher room=%s", r.room)
+	}
+	if ev.ShortAddr != shortAddr || ev.StartReg != register || ev.Count != count {
+		return nil, fmt.Errorf(
+			"unexpected modbus read ack target expected_short=%d got_short=%d expected_reg=0x%X got_reg=0x%X expected_count=%d got_count=%d",
+			shortAddr, ev.ShortAddr, register, ev.StartReg, count, ev.Count,
+		)
 	}
 	// log.Printf("rcu.modbus.read.ack room=%s short_addr=%d ack=0x%X start_reg=0x%X count=%d", r.room, ev.ShortAddr, ev.Ack, ev.StartReg, ev.Count)
 	return ev, nil
 }
 
 func (r *realRcuClient) sendModbusWriteAndAwaitAckLocked(msg []byte, shortAddr int) (*modbusWriteReturnEvent, error) {
-	r.ensureReaderReadyLocked()
-	if r.conn == nil {
+	conn := r.connForChannelLocked(connChannelModbus)
+	if conn == nil {
 		return nil, fmt.Errorf("rcu connection is nil")
 	}
-	r.discardUnexpectedInboundLocked("before_modbus_write")
-	if err := r.conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+	if err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		return nil, err
 	}
-	if _, err := r.conn.Write(msg); err != nil {
+	if _, err := conn.Write(msg); err != nil {
 		return nil, err
 	}
-
-	frame, err := r.waitForDeferredFrameLocked(5*time.Second, func(frame *rcuFrame) bool {
-		if frame == nil || frame.CmdNo != 7 || frame.SubCmdNo != 1 {
-			return false
-		}
-		ev, ok := parseModbusWriteReturnEvent(frame.Payload)
-		if !ok {
-			log.Printf("rcu.modbus.write.ignore room=%s reason=parse_failed payload_hex=% X", r.room, frame.Payload)
-			return false
-		}
-		if ev.ShortAddr != shortAddr {
-			log.Printf(
-				"rcu.modbus.write.ignore room=%s reason=unexpected_short_addr expected=%d got=%d",
-				r.room, shortAddr, ev.ShortAddr,
-			)
-			return false
-		}
-		return true
-	})
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		return nil, err
+	}
+	frame, err := readFrame(conn)
 	if err != nil {
 		if shouldCloseConnectionForModbusError(err) {
-			r.closeConnLocked()
+			r.closeConnForChannelLocked(connChannelModbus)
 		}
 		return nil, err
+	}
+	if frame == nil || frame.CmdNo != 7 || frame.SubCmdNo != 1 {
+		return nil, fmt.Errorf("unexpected modbus write frame cmdType=%d cmdNo=%d subCmdNo=%d", frame.CmdType, frame.CmdNo, frame.SubCmdNo)
 	}
 	ev, ok := parseModbusWriteReturnEvent(frame.Payload)
 	if !ok {
 		return nil, fmt.Errorf("invalid modbus write ack payload after matcher room=%s", r.room)
+	}
+	if ev.ShortAddr != shortAddr {
+		return nil, fmt.Errorf("unexpected modbus write ack target expected_short=%d got_short=%d", shortAddr, ev.ShortAddr)
 	}
 	return ev, nil
 }
@@ -2213,16 +2211,29 @@ func (r *realRcuClient) fetchDaliOutputAddressesLockedConn() ([]int, error) {
 }
 
 func (r *realRcuClient) ensureConnectedLocked() error {
-	return r.ensureConnectedWithTimeoutLocked(connectTimeout)
+	return r.ensureConnectedForChannelLocked(connChannelEvent)
 }
 
 func (r *realRcuClient) ensureConnectedWithTimeoutLocked(timeout time.Duration) error {
-	if r.conn != nil {
-		r.ensureReaderReadyLocked()
-		if err := r.pollReaderErrorLocked(); err == nil {
+	return r.ensureConnectedWithTimeoutForChannelLocked(connChannelEvent, timeout)
+}
+
+func (r *realRcuClient) ensureConnectedForChannelLocked(channel connChannel) error {
+	return r.ensureConnectedWithTimeoutForChannelLocked(channel, connectTimeout)
+}
+
+func (r *realRcuClient) ensureConnectedWithTimeoutForChannelLocked(channel connChannel, timeout time.Duration) error {
+	conn := r.connForChannelLocked(channel)
+	if conn != nil {
+		if channel == connChannelEvent {
+			r.ensureReaderReadyForChannelLocked(channel)
+			if err := r.pollReaderErrorLocked(); err == nil {
+				return nil
+			}
+		} else {
 			return nil
 		}
-		r.closeConnLocked()
+		r.closeConnForChannelLocked(channel)
 	}
 	now := time.Now()
 	if now.Before(r.reconnectBlockedUntil) {
@@ -2269,38 +2280,51 @@ func (r *realRcuClient) ensureConnectedWithTimeoutLocked(timeout time.Duration) 
 		_ = tcp.SetKeepAlive(true)
 		_ = tcp.SetNoDelay(true)
 	}
-	r.conn = conn
-	r.ensureReaderReadyLocked()
+	r.setConnForChannelLocked(channel, conn)
+	r.ensureReaderReadyForChannelLocked(channel)
 	r.reconnectFailCount = 0
 	r.reconnectBlockedUntil = time.Time{}
-	log.Printf("rcu.connect room=%s host=%s port=%d", r.room, r.cfg.Host, r.cfg.Port)
+	log.Printf("rcu.connect room=%s channel=%s host=%s port=%d", r.room, channel, r.cfg.Host, r.cfg.Port)
 	return nil
 }
 
 func (r *realRcuClient) closeConnLocked() {
-	if r.conn != nil {
-		conn := r.conn
+	r.closeConnForChannelLocked(connChannelEvent)
+}
+
+func (r *realRcuClient) closeConnForChannelLocked(channel connChannel) {
+	conn := r.connForChannelLocked(channel)
+	if conn != nil {
 		stopCh := r.readerStopCh
 		readerErr := r.pollReaderErrorLocked()
-		r.conn = nil
-		r.readerReplyCh = nil
-		r.readerDeferredCh = nil
-		r.readerErrCh = nil
-		r.readerStopCh = nil
-		if stopCh != nil {
+		r.setConnForChannelLocked(channel, nil)
+		if channel == connChannelEvent {
+			r.readerReplyCh = nil
+			r.readerDeferredCh = nil
+			r.readerErrCh = nil
+			r.readerStopCh = nil
+		}
+		if channel == connChannelEvent && stopCh != nil {
 			close(stopCh)
 		}
 		_ = conn.Close()
 		if readerErr != nil {
-			log.Printf("rcu.disconnect room=%s reason=%v", r.room, readerErr)
+			log.Printf("rcu.disconnect room=%s channel=%s reason=%v", r.room, channel, readerErr)
 		} else {
-			log.Printf("rcu.disconnect room=%s", r.room)
+			log.Printf("rcu.disconnect room=%s channel=%s", r.room, channel)
 		}
 	}
 }
 
 func (r *realRcuClient) ensureReaderReadyLocked() {
-	if r.conn == nil {
+	r.ensureReaderReadyForChannelLocked(connChannelEvent)
+}
+
+func (r *realRcuClient) ensureReaderReadyForChannelLocked(channel connChannel) {
+	if channel != connChannelEvent {
+		return
+	}
+	if r.eventConn == nil {
 		return
 	}
 	if r.readerReplyCh != nil && r.readerDeferredCh != nil && r.readerErrCh != nil && r.readerStopCh != nil {
@@ -2310,7 +2334,29 @@ func (r *realRcuClient) ensureReaderReadyLocked() {
 	r.readerDeferredCh = make(chan *rcuFrame, readerDeferredQueueSize())
 	r.readerErrCh = make(chan error, 1)
 	r.readerStopCh = make(chan struct{})
-	r.startReaderLocked(r.conn, r.readerReplyCh, r.readerDeferredCh, r.readerErrCh, r.readerStopCh)
+	r.startReaderLocked(r.eventConn, r.readerReplyCh, r.readerDeferredCh, r.readerErrCh, r.readerStopCh)
+}
+
+func (r *realRcuClient) connForChannelLocked(channel connChannel) net.Conn {
+	switch channel {
+	case connChannelWrite:
+		return r.writeConn
+	case connChannelModbus:
+		return r.modbusConn
+	default:
+		return r.eventConn
+	}
+}
+
+func (r *realRcuClient) setConnForChannelLocked(channel connChannel, conn net.Conn) {
+	switch channel {
+	case connChannelWrite:
+		r.writeConn = conn
+	case connChannelModbus:
+		r.modbusConn = conn
+	default:
+		r.eventConn = conn
+	}
 }
 
 func (r *realRcuClient) startReaderLocked(
@@ -2675,7 +2721,7 @@ func (r *realRcuClient) sendRequestLocked(msg []byte) (*rcuFrame, error) {
 }
 
 func (r *realRcuClient) sendRequestLockedWithTimeout(msg []byte, timeout time.Duration) (*rcuFrame, error) {
-	return r.sendRequestLockedWithTimeoutAndMatcher(msg, timeout, matcherFromRequest(msg, "request_reply"))
+	return r.sendRequestOnChannelLockedWithTimeoutAndMatcher(connChannelEvent, msg, timeout, matcherFromRequest(msg, "request_reply"))
 }
 
 func (r *realRcuClient) sendRequestLockedWithTimeoutAndMatcher(
@@ -2683,28 +2729,41 @@ func (r *realRcuClient) sendRequestLockedWithTimeoutAndMatcher(
 	timeout time.Duration,
 	matcher *frameMatcher,
 ) (*rcuFrame, error) {
-	if r.conn == nil {
+	return r.sendRequestOnChannelLockedWithTimeoutAndMatcher(connChannelEvent, msg, timeout, matcher)
+}
+
+func (r *realRcuClient) sendRequestOnChannelLockedWithTimeoutAndMatcher(
+	channel connChannel,
+	msg []byte,
+	timeout time.Duration,
+	matcher *frameMatcher,
+) (*rcuFrame, error) {
+	conn := r.connForChannelLocked(channel)
+	if conn == nil {
 		return nil, fmt.Errorf("rcu connection is nil")
 	}
-	r.ensureReaderReadyLocked()
+	r.ensureReaderReadyForChannelLocked(channel)
 	if timeout <= 0 {
 		timeout = timeoutFor(opKindRefreshMisc)
 	}
 	if timeout > timeoutCap {
 		timeout = timeoutCap
 	}
+	if channel != connChannelEvent {
+		return nil, fmt.Errorf("request/reply matcher flow is only supported on event channel")
+	}
 	r.discardUnexpectedInboundLocked("before_request")
-	if err := r.conn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
+	if err := conn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
 		return nil, err
 	}
-	if _, err := r.conn.Write(msg); err != nil {
+	if _, err := conn.Write(msg); err != nil {
 		return nil, err
 	}
 	frame, err := r.waitForMatchingReplyFrameLocked(timeout, matcher)
 	if err != nil {
 		if shouldCloseConnectionForRequestError(err) {
 			log.Printf("rcu.request.error room=%s action=close_connection err=%v", r.room, err)
-			r.closeConnLocked()
+			r.closeConnForChannelLocked(channel)
 		} else {
 			log.Printf("rcu.request.error room=%s action=keep_connection err=%v", r.room, err)
 		}
@@ -2743,22 +2802,55 @@ func (r *realRcuClient) sendCommandNoResponseLocked(msg []byte) error {
 	return r.sendCommandNoResponseLockedWithTimeout(msg, timeoutFor(opKindScene))
 }
 
+func (r *realRcuClient) sendWriteRequestLockedWithTimeout(msg []byte, timeout time.Duration) (*rcuFrame, error) {
+	conn := r.connForChannelLocked(connChannelWrite)
+	if conn == nil {
+		return nil, fmt.Errorf("rcu connection is nil")
+	}
+	if timeout <= 0 {
+		timeout = timeoutFor(opKindScene)
+	}
+	if timeout > timeoutCap {
+		timeout = timeoutCap
+	}
+	if err := conn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
+		return nil, err
+	}
+	if _, err := conn.Write(msg); err != nil {
+		return nil, err
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		return nil, err
+	}
+	frame, err := readFrame(conn)
+	if err != nil {
+		if shouldCloseConnectionForRequestError(err) {
+			r.closeConnForChannelLocked(connChannelWrite)
+		}
+		return nil, err
+	}
+	matcher := matcherFromRequest(msg, "write_request_reply")
+	if ok, reason := matcher.match(frame); !ok {
+		return nil, fmt.Errorf("write request reply mismatch: %s", reason)
+	}
+	return frame, nil
+}
+
 func (r *realRcuClient) sendCommandNoResponseLockedWithTimeout(msg []byte, timeout time.Duration) error {
-	if r.conn == nil {
+	conn := r.connForChannelLocked(connChannelWrite)
+	if conn == nil {
 		return fmt.Errorf("rcu connection is nil")
 	}
-	r.ensureReaderReadyLocked()
 	if timeout <= 0 {
 		timeout = sceneWriteOnlyTimeout
 	}
 	if timeout > timeoutCap {
 		timeout = timeoutCap
 	}
-	r.discardUnexpectedInboundLocked("before_fire_and_forget")
-	if err := r.conn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
+	if err := conn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
 		return err
 	}
-	_, err := r.conn.Write(msg)
+	_, err := conn.Write(msg)
 	return err
 }
 
