@@ -2959,7 +2959,13 @@ func shouldResetConnOnError(err error) bool {
 	case faultConnReset, faultBrokenPipe, faultNilConn:
 		return true
 	}
-	return isTransientCommandError(err)
+	// Timeouts and other transient protocol-level errors can happen when some
+	// query/feedback pairs are not supported by a given firmware build. Tearing
+	// down the socket on each transient error causes reconnect churn and floods
+	// logs with "use of closed network connection" from the reader goroutine.
+	//
+	// Keep the connection open unless the underlying socket is actually broken.
+	return false
 }
 
 type networkFault string
