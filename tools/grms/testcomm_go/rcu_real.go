@@ -340,7 +340,7 @@ type realRcuClient struct {
 
 	mu sync.RWMutex
 
-	initialized bool
+	initialized atomic.Bool
 	gtinName    string
 
 	isDoorOpened                      bool
@@ -1249,7 +1249,7 @@ func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
 		return "skipped", nil
 	}
 
-	if !r.initialized {
+	if !r.initialized.Load() {
 		initRes := r.enqueueOperation(opRequest{
 			kind:     opKindRefreshMisc,
 			priority: priority,
@@ -1427,7 +1427,7 @@ func (r *realRcuClient) refreshUnlockedLockedConn() error {
 		return nil
 	}
 
-	if !r.initialized {
+	if !r.initialized.Load() {
 		if err := r.initializeLockedConn(); err != nil {
 			return err
 		}
@@ -1522,7 +1522,7 @@ func (r *realRcuClient) initializeLockedConn() error {
 	r.applyExpectedDeviceNamesLocked()
 	r.mu.Unlock()
 
-	r.initialized = true
+	r.initialized.Store(true)
 	log.Printf("rcu.initialized room=%s outputs=%d", r.room, len(r.outputs))
 	if modbusSyncEnabled() {
 		r.bootstrapThermostatRegistersLockedConn()
