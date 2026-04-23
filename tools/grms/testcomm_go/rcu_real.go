@@ -2956,15 +2956,13 @@ func shouldResetConnOnError(err error) bool {
 		return false
 	}
 	switch classifyNetworkFault(err) {
-	case faultConnReset, faultBrokenPipe, faultNilConn:
+	case faultTimeout, faultConnReset, faultBrokenPipe, faultNilConn:
 		return true
 	}
-	// Timeouts and other transient protocol-level errors can happen when some
-	// query/feedback pairs are not supported by a given firmware build. Tearing
-	// down the socket on each transient error causes reconnect churn and floods
-	// logs with "use of closed network connection" from the reader goroutine.
-	//
-	// Keep the connection open unless the underlying socket is actually broken.
+	// Keep the connection open for non-socket protocol errors, but reconnect on
+	// operation timeouts. A timeout can indicate a dead-but-still-open socket;
+	// reconnecting provides a recovery path while still avoiding churn for
+	// unsupported query/feedback combinations that fail fast.
 	return false
 }
 
