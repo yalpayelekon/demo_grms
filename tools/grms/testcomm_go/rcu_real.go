@@ -1092,45 +1092,52 @@ func (r *realRcuClient) enqueueOperation(req opRequest) opResult {
 }
 
 func (r *realRcuClient) opWorkerLoop() {
-	lowBudget := lowPriorityBurst()
+	mediumBeforeLow := lowPriorityBurst()
+	if mediumBeforeLow <= 0 {
+		mediumBeforeLow = 1
+	}
+	mediumSinceLow := 0
 	for {
 		select {
 		case <-r.opStop:
 			return
 		case req := <-r.priorityOpCh:
+			mediumSinceLow = 0
 			r.executeOperation(req)
 			continue
 		default:
+		}
+
+		if mediumSinceLow >= mediumBeforeLow {
+			select {
+			case <-r.opStop:
+				return
+			case req := <-r.priorityOpCh:
+				mediumSinceLow = 0
+				r.executeOperation(req)
+				continue
+			case req := <-r.lowOpCh:
+				mediumSinceLow = 0
+				r.executeOperation(req)
+				continue
+			default:
+			}
 		}
 
 		select {
 		case <-r.opStop:
 			return
 		case req := <-r.priorityOpCh:
-			lowBudget = lowPriorityBurst()
+			mediumSinceLow = 0
 			r.executeOperation(req)
 		case req := <-r.mediumOpCh:
-			lowBudget = lowPriorityBurst()
+			mediumSinceLow++
+			r.executeOperation(req)
+		case req := <-r.lowOpCh:
+			mediumSinceLow = 0
 			r.executeOperation(req)
 		default:
-			if lowBudget <= 0 {
-				lowBudget = lowPriorityBurst()
-				time.Sleep(2 * time.Millisecond)
-				continue
-			}
-			select {
-			case <-r.opStop:
-				return
-			case req := <-r.priorityOpCh:
-				lowBudget = lowPriorityBurst()
-				r.executeOperation(req)
-			case req := <-r.mediumOpCh:
-				lowBudget = lowPriorityBurst()
-				r.executeOperation(req)
-			case req := <-r.lowOpCh:
-				lowBudget--
-				r.executeOperation(req)
-			}
+			time.Sleep(2 * time.Millisecond)
 		}
 	}
 }
