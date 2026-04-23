@@ -123,8 +123,6 @@ var (
 	queueRetryMax                 int
 	pollingLogsOnce               sync.Once
 	pollingLogsEnabled            bool
-	neverCloseConnOnce            sync.Once
-	neverCloseConnValue           bool
 	modbusSyncEnabledOnce         sync.Once
 	modbusSyncEnabledValue        bool
 )
@@ -1068,7 +1066,7 @@ func (r *realRcuClient) executeOperation(req opRequest) {
 		if isTimeoutError(err) {
 			log.Printf("rcu.op.timeout room=%s kind=%s error=%v", r.room, req.kind, err)
 		}
-		if shouldResetConnOnError(err) {
+		if shouldResetConnOnError(req.kind, err) {
 			r.closeConnLocked()
 		}
 		req.resultCh <- opResult{err: err, lockWaitMs: lockWaitMs}
@@ -2979,11 +2977,14 @@ func isTransientCommandError(err error) bool {
 		strings.Contains(msg, "forcibly closed")
 }
 
-func shouldResetConnOnError(err error) bool {
+func shouldResetConnOnError(kind opKind, err error) bool {
 	if err == nil {
 		return false
 	}
-	if neverCloseConnection() {
+	// Keep poller/read-side refresh failures isolated so lower-priority channels
+	// (especially modbus and misc refreshes) do not force connection churn that
+	// can interrupt scene and lighting command paths.
+	if isPollingOp(kind) {
 		return false
 	}
 	switch classifyNetworkFault(err) {
@@ -3808,14 +3809,6 @@ func isTimeoutError(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "i/o timeout")
 }
 
-func neverCloseConnection() bool {
-	neverCloseConnOnce.Do(func() {
-		raw := strings.TrimSpace(os.Getenv("TESTCOMM_NEVER_CLOSE_CONN"))
-		neverCloseConnValue = raw == "1" || strings.EqualFold(raw, "true")
-	})
-	return neverCloseConnValue
-}
-
 func modbusSyncEnabled() bool {
 	modbusSyncEnabledOnce.Do(func() {
 		raw := strings.TrimSpace(os.Getenv("TESTCOMM_ENABLE_MODBUS_SYNC"))
@@ -3837,16 +3830,13 @@ func modbusPollInterval(envKey string, defaultValue time.Duration) time.Duration
 }
 
 func shouldCloseConnectionForModbusError(err error) bool {
-	if neverCloseConnection() {
-		return false
-	}
-	return !isTimeoutError(err)
+	// Keep modbus faults from forcing a shared-socket reconnect so that scene and
+	// lighting command flows can continue even during HVAC/modbus degradation.
+	// Hard socket failures are still handled by request/operation paths.
+	return false
 }
 
 func shouldCloseConnectionForRequestError(err error) bool {
-	if neverCloseConnection() {
-		return false
-	}
 	return isHardSocketError(err)
 }
 
