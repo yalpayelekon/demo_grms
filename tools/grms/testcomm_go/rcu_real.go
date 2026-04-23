@@ -541,6 +541,7 @@ func normalizeServiceStates(dnd, mur, laundry string) (string, string, string, b
 func (r *realRcuClient) LightingSummary() map[string]interface{} {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	// *Locked helpers expect caller to hold r.mu (read or write lock).
 	onboard := make([]map[string]interface{}, 0)
 	dali := make([]map[string]interface{}, 0)
 	for _, d := range r.sortedOutputsLocked() {
@@ -579,6 +580,8 @@ func (r *realRcuClient) LightingSummary() map[string]interface{} {
 }
 
 func (r *realRcuClient) LightingLegacy() map[string]interface{} {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return map[string]interface{}{"lightingDevices": r.buildLightingDevicesLocked()}
 }
 

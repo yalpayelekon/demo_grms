@@ -33,7 +33,7 @@ func TestRefreshSkippedDuringSceneWindow(t *testing.T) {
 func TestRefreshBudgetProcessesOnlyConfiguredBatch(t *testing.T) {
 	r := newRealRcuClient("Demo 101", RcuConfig{Host: "127.0.0.1", Port: 5556})
 	t.Cleanup(r.stopCommandWorker)
-	r.initialized = true
+	r.initialized.Store(true)
 	r.conn = &fakeConn{readBuf: bytes.NewBuffer(buildReplyFrames(24))}
 
 	r.mu.Lock()
@@ -60,7 +60,7 @@ func TestRefreshBudgetProcessesOnlyConfiguredBatch(t *testing.T) {
 func TestRefreshCursorWrapsAcrossCycles(t *testing.T) {
 	r := newRealRcuClient("Demo 101", RcuConfig{Host: "127.0.0.1", Port: 5556})
 	t.Cleanup(r.stopCommandWorker)
-	r.initialized = true
+	r.initialized.Store(true)
 	r.conn = &fakeConn{readBuf: bytes.NewBuffer(buildReplyFrames(48))}
 
 	r.mu.Lock()
@@ -186,4 +186,3 @@ func TestSceneAcceptedModeRemainsDefault(t *testing.T) {
 		t.Fatalf("status=%q want accepted", status)
 	}
 }
-
