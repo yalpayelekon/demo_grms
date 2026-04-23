@@ -2598,14 +2598,25 @@ func matcherFromRequest(msg []byte, name string) *frameMatcher {
 	if len(msg) < 6 {
 		return nil
 	}
-	cmdType := int(msg[1])
+	cmdType := int(msg[3])
 	cmdNo := int(msg[4])
 	subCmdNo := int(msg[5])
 	return &frameMatcher{
 		name:            name,
 		expectedCmdType: &cmdType,
 		expectedCmdNo:   &cmdNo,
-		expectedSubCmd:  &subCmdNo,
+		validate: func(frame *rcuFrame) (bool, string) {
+			if frame == nil {
+				return false, "nil frame"
+			}
+			if frame.SubCmdNo == subCmdNo {
+				return true, ""
+			}
+			if frame.SubCmdNo == ((subCmdNo + 1) & 0xFF) {
+				return true, ""
+			}
+			return false, fmt.Sprintf("subCmdNo=%d expected=%d_or_%d", frame.SubCmdNo, subCmdNo, (subCmdNo+1)&0xFF)
+		},
 	}
 }
 
