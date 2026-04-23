@@ -157,7 +157,15 @@ type opPriority string
 
 const (
 	opPriorityHigh   opPriority = "high"
-	opPriorityNormal opPriority = "normal"
+	opPriorityMedium opPriority = "medium"
+	opPriorityLow    opPriority = "low"
+)
+
+const (
+	priorityOpQueueCapacity = 64
+	mediumOpQueueCapacity   = 96
+	lowOpQueueCapacity      = 96
+	highQueueReserveSlots   = 24
 )
 
 type opKind string
@@ -170,6 +178,14 @@ const (
 	opKindRefreshMisc   opKind = "refresh_misc"
 )
 
+var opPriorityPolicy = map[opKind]opPriority{
+	opKindScene:         opPriorityHigh,
+	opKindLightingLevel: opPriorityHigh,
+	opKindRefreshCore:   opPriorityMedium,
+	opKindRefreshOutput: opPriorityLow,
+	opKindRefreshMisc:   opPriorityLow,
+}
+
 type opResult struct {
 	payload    map[string]interface{}
 	err        error
@@ -177,12 +193,14 @@ type opResult struct {
 }
 
 type opRequest struct {
-	kind     opKind
-	priority opPriority
-	timeout  time.Duration
-	metadata string
-	resultCh chan opResult
-	exec     func(timeout time.Duration) (map[string]interface{}, error)
+	kind       opKind
+	priority   opPriority
+	timeout    time.Duration
+	metadata   string
+	queue      string
+	enqueuedAt time.Time
+	resultCh   chan opResult
+	exec       func(timeout time.Duration) (map[string]interface{}, error)
 }
 
 type sceneCallError struct {
@@ -388,7 +406,8 @@ type realRcuClient struct {
 	queueStopM sync.Once
 
 	priorityOpCh chan opRequest
-	normalOpCh   chan opRequest
+	mediumOpCh   chan opRequest
+	lowOpCh      chan opRequest
 	opOnce       sync.Once
 	opStop       chan struct{}
 	opStopM      sync.Once
@@ -426,8 +445,9 @@ func newRealRcuClient(room string, cfg RcuConfig) *realRcuClient {
 		modbusStop:              make(chan struct{}),
 		cmdQueue:                make(chan queuedCommand, commandQueueSize()),
 		queueStop:               make(chan struct{}),
-		priorityOpCh:            make(chan opRequest, 64),
-		normalOpCh:              make(chan opRequest, 128),
+		priorityOpCh:            make(chan opRequest, priorityOpQueueCapacity),
+		mediumOpCh:              make(chan opRequest, mediumOpQueueCapacity),
+		lowOpCh:                 make(chan opRequest, lowOpQueueCapacity),
 		opStop:                  make(chan struct{}),
 		sceneCoalescingActive:   sceneCoalescingEnabled(),
 		modbusBreakerState:      modbusBreakerClosed,
@@ -469,7 +489,7 @@ func (r *realRcuClient) InitializeAndUpdate() bool {
 	}
 
 	startedAt := time.Now()
-	outcome, err := r.enqueueRefreshOps(opPriorityNormal)
+	outcome, err := r.enqueueRefreshOps(opPriorityMedium)
 	if err != nil {
 		log.Printf("rcu.refresh failed room=%s host=%s port=%d error=%v", r.room, r.cfg.Host, r.cfg.Port, err)
 		logSlowDuration(
@@ -1020,17 +1040,45 @@ func (r *realRcuClient) startOperationWorker() {
 
 func (r *realRcuClient) enqueueOperation(req opRequest) opResult {
 	req.resultCh = make(chan opResult, 1)
+	if isServiceEventRelatedMetadata(req.metadata) {
+		req.priority = opPriorityHigh
+	}
+	req.priority = priorityForOp(req.kind, req.priority)
 	if req.timeout <= 0 {
 		req.timeout = timeoutFor(req.kind)
 	}
-	target := r.normalOpCh
+	if req.priority == opPriorityLow && req.timeout > lowPriorityTimeoutCap() {
+		req.timeout = lowPriorityTimeoutCap()
+	}
+	req.enqueuedAt = time.Now()
+	target := r.mediumOpCh
+	req.queue = "medium"
 	if req.priority == opPriorityHigh {
 		target = r.priorityOpCh
+		req.queue = "high"
+	} else if req.priority == opPriorityLow {
+		if len(r.mediumOpCh)+len(r.lowOpCh) >= lowPriorityQueueQuota() {
+			return opResult{err: fmt.Errorf("operation queue quota exceeded for low-priority op")}
+		}
+		target = r.lowOpCh
+		req.queue = "low"
 	}
 	select {
 	case <-r.opStop:
 		return opResult{err: fmt.Errorf("operation queue stopped")}
 	case target <- req:
+		if !isPollingOp(req.kind) || verbosePollingLogsEnabled() {
+			log.Printf(
+				"rcu.op.enqueue room=%s kind=%s queue=%s priority=%s queueDepth=%d timeoutMs=%d metadata=%s",
+				r.room,
+				req.kind,
+				req.queue,
+				req.priority,
+				len(target),
+				req.timeout.Milliseconds(),
+				strings.TrimSpace(req.metadata),
+			)
+		}
 	case <-time.After(2 * time.Second):
 		return opResult{err: fmt.Errorf("operation queue enqueue timeout")}
 	}
@@ -1044,6 +1092,7 @@ func (r *realRcuClient) enqueueOperation(req opRequest) opResult {
 }
 
 func (r *realRcuClient) opWorkerLoop() {
+	lowBudget := lowPriorityBurst()
 	for {
 		select {
 		case <-r.opStop:
@@ -1058,20 +1107,44 @@ func (r *realRcuClient) opWorkerLoop() {
 		case <-r.opStop:
 			return
 		case req := <-r.priorityOpCh:
+			lowBudget = lowPriorityBurst()
 			r.executeOperation(req)
-		case req := <-r.normalOpCh:
+		case req := <-r.mediumOpCh:
+			lowBudget = lowPriorityBurst()
 			r.executeOperation(req)
+		default:
+			if lowBudget <= 0 {
+				lowBudget = lowPriorityBurst()
+				time.Sleep(2 * time.Millisecond)
+				continue
+			}
+			select {
+			case <-r.opStop:
+				return
+			case req := <-r.priorityOpCh:
+				lowBudget = lowPriorityBurst()
+				r.executeOperation(req)
+			case req := <-r.mediumOpCh:
+				lowBudget = lowPriorityBurst()
+				r.executeOperation(req)
+			case req := <-r.lowOpCh:
+				lowBudget--
+				r.executeOperation(req)
+			}
 		}
 	}
 }
 
 func (r *realRcuClient) executeOperation(req opRequest) {
+	queueLatencyMs := time.Since(req.enqueuedAt).Milliseconds()
 	if !isPollingOp(req.kind) || verbosePollingLogsEnabled() {
 		log.Printf(
-			"rcu.op.exec room=%s kind=%s priority=%s timeoutMs=%d metadata=%s",
+			"rcu.op.exec room=%s kind=%s queue=%s priority=%s queueLatencyMs=%d timeoutMs=%d metadata=%s",
 			r.room,
 			req.kind,
+			req.queue,
 			req.priority,
+			queueLatencyMs,
 			req.timeout.Milliseconds(),
 			strings.TrimSpace(req.metadata),
 		)
@@ -1255,11 +1328,11 @@ func (r *realRcuClient) executeQueuedCommand(cmd queuedCommand) {
 }
 
 func (r *realRcuClient) refresh() error {
-	_, err := r.enqueueRefreshOps(opPriorityNormal)
+	_, err := r.enqueueRefreshOps(opPriorityMedium)
 	return err
 }
 
-func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
+func (r *realRcuClient) enqueueRefreshOps(_ opPriority) (string, error) {
 	if r.hasPendingWrite() {
 		r.refreshSkipCounter.Add(1)
 		logPollingf("rcu.refresh.skip room=%s reason=pending_write", r.room)
@@ -1289,7 +1362,7 @@ func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
 	if !r.initialized.Load() {
 		initRes := r.enqueueOperation(opRequest{
 			kind:     opKindRefreshMisc,
-			priority: priority,
+			priority: opPriorityLow,
 			timeout:  timeoutFor(opKindRefreshMisc),
 			metadata: "initialize",
 			exec: func(timeout time.Duration) (map[string]interface{}, error) {
@@ -1303,7 +1376,7 @@ func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
 
 	coreRes := r.enqueueOperation(opRequest{
 		kind:     opKindRefreshCore,
-		priority: priority,
+		priority: opPriorityMedium,
 		timeout:  timeoutFor(opKindRefreshCore),
 		metadata: "refresh_core",
 		exec: func(timeout time.Duration) (map[string]interface{}, error) {
@@ -1316,7 +1389,7 @@ func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
 
 	miscRes := r.enqueueOperation(opRequest{
 		kind:     opKindRefreshMisc,
-		priority: priority,
+		priority: opPriorityLow,
 		timeout:  timeoutFor(opKindRefreshMisc),
 		metadata: "refresh_dali_line_status",
 		exec: func(timeout time.Duration) (map[string]interface{}, error) {
@@ -1343,7 +1416,7 @@ func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
 		} else {
 			priorityRes := r.enqueueOperation(opRequest{
 				kind:     opKindRefreshOutput,
-				priority: priority,
+				priority: opPriorityLow,
 				timeout:  timeoutFor(opKindRefreshOutput),
 				metadata: fmt.Sprintf("priority_alarm_address=%d", priorityAddr),
 				exec: func(address int) func(time.Duration) (map[string]interface{}, error) {
@@ -1387,7 +1460,7 @@ func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
 			addr := addresses[(start+i)%total]
 			res := r.enqueueOperation(opRequest{
 				kind:     opKindRefreshOutput,
-				priority: priority,
+				priority: opPriorityLow,
 				timeout:  timeoutFor(opKindRefreshOutput),
 				metadata: fmt.Sprintf("address=%d", addr),
 				exec: func(address int) func(time.Duration) (map[string]interface{}, error) {
@@ -2948,6 +3021,33 @@ func isPollingOp(kind opKind) bool {
 	default:
 		return false
 	}
+}
+
+func priorityForOp(kind opKind, requested opPriority) opPriority {
+	if requested == opPriorityHigh || requested == opPriorityMedium || requested == opPriorityLow {
+		return requested
+	}
+	if priority, ok := opPriorityPolicy[kind]; ok {
+		return priority
+	}
+	return opPriorityMedium
+}
+
+func lowPriorityQueueQuota() int {
+	return mediumOpQueueCapacity + lowOpQueueCapacity - highQueueReserveSlots
+}
+
+func lowPriorityBurst() int {
+	return 2
+}
+
+func lowPriorityTimeoutCap() time.Duration {
+	return 300 * time.Millisecond
+}
+
+func isServiceEventRelatedMetadata(metadata string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(metadata))
+	return strings.Contains(normalized, "service-event") || strings.Contains(normalized, "service_event")
 }
 
 func debugTimingThreshold() time.Duration {
