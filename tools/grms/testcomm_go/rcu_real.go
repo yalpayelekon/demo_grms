@@ -106,6 +106,8 @@ var (
 	pollingLogsEnabled            bool
 	neverCloseConnOnce            sync.Once
 	neverCloseConnValue           bool
+	modbusSyncEnabledOnce         sync.Once
+	modbusSyncEnabledValue        bool
 )
 
 type queuedCommandKind string
@@ -1503,9 +1505,13 @@ func (r *realRcuClient) initializeLockedConn() error {
 
 	r.initialized = true
 	log.Printf("rcu.initialized room=%s outputs=%d", r.room, len(r.outputs))
-	r.bootstrapThermostatRegistersLockedConn()
-	// Keep HVAC communication health fresh so comError is cleared when reads recover.
-	r.startModbusSyncLoop()
+	if modbusSyncEnabled() {
+		r.bootstrapThermostatRegistersLockedConn()
+		// Keep HVAC communication health fresh so comError is cleared when reads recover.
+		r.startModbusSyncLoop()
+	} else {
+		log.Printf("rcu.modbus.sync disabled room=%s reason=protocol_guard", r.room)
+	}
 	return nil
 }
 
@@ -3698,6 +3704,14 @@ func neverCloseConnection() bool {
 		neverCloseConnValue = raw == "1" || strings.EqualFold(raw, "true")
 	})
 	return neverCloseConnValue
+}
+
+func modbusSyncEnabled() bool {
+	modbusSyncEnabledOnce.Do(func() {
+		raw := strings.TrimSpace(os.Getenv("TESTCOMM_ENABLE_MODBUS_SYNC"))
+		modbusSyncEnabledValue = raw == "1" || strings.EqualFold(raw, "true")
+	})
+	return modbusSyncEnabledValue
 }
 
 func shouldCloseConnectionForModbusError(err error) bool {
