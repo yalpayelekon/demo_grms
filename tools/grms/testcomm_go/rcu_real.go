@@ -2610,6 +2610,7 @@ func (r *realRcuClient) readerLoop(
 			if isDeferredEventFrame(frame) {
 				select {
 				case deferredCh <- frame:
+					r.recordQueueDepthHighWatermark(connChannelEvent, len(replyCh)+len(deferredCh)+len(pendingReplies))
 					r.recordDispatchLatency(connChannelEvent, "deferred", time.Since(readAt))
 				case <-stopCh:
 					return
@@ -2619,6 +2620,7 @@ func (r *realRcuClient) readerLoop(
 		}
 		select {
 		case replyCh <- frame:
+			r.recordQueueDepthHighWatermark(connChannelEvent, len(replyCh)+len(deferredCh)+len(pendingReplies))
 			r.recordDispatchLatency(connChannelEvent, "reply", time.Since(readAt))
 			continue
 		default:
