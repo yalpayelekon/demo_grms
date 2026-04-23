@@ -3141,12 +3141,6 @@ func shouldResetConnOnError(kind opKind, err error) bool {
 	if err == nil {
 		return false
 	}
-	// Keep poller/read-side refresh failures isolated so lower-priority channels
-	// (especially modbus and misc refreshes) do not force connection churn that
-	// can interrupt scene and lighting command paths.
-	if isPollingOp(kind) {
-		return false
-	}
 	switch classifyNetworkFault(err) {
 	case faultTimeout, faultConnReset, faultBrokenPipe, faultNilConn:
 		return true
@@ -4002,10 +3996,7 @@ func modbusPollInt(envKey string, defaultValue int, minValue int) int {
 }
 
 func shouldCloseConnectionForModbusError(err error) bool {
-	// Keep modbus faults from forcing a shared-socket reconnect so that scene and
-	// lighting command flows can continue even during HVAC/modbus degradation.
-	// Hard socket failures are still handled by request/operation paths.
-	return false
+	return isHardSocketError(err)
 }
 
 func shouldCloseConnectionForRequestError(err error) bool {
