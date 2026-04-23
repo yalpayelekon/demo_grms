@@ -350,6 +350,11 @@ const (
 	connChannelModbus connChannel = "modbus"
 )
 
+type readerPendingReply struct {
+	frame      *rcuFrame
+	enqueuedAt time.Time
+}
+
 type modbusBreakerState string
 
 const (
@@ -422,9 +427,25 @@ type realRcuClient struct {
 	latestSceneNumber     atomic.Int32
 	sceneCoalescingActive bool
 
-	readerDeferredDropCount atomic.Uint64
-	readerReplyDropCount    atomic.Uint64
-	readerDropLastLogAtNs   atomic.Int64
+	readerDeferredDropCountEvent   atomic.Uint64
+	readerDeferredDropCountWrite   atomic.Uint64
+	readerDeferredDropCountModbus  atomic.Uint64
+	readerReplyDropCountEvent      atomic.Uint64
+	readerReplyDropCountWrite      atomic.Uint64
+	readerReplyDropCountModbus     atomic.Uint64
+	readerQueueDepthHwmEvent       atomic.Uint64
+	readerQueueDepthHwmWrite       atomic.Uint64
+	readerQueueDepthHwmModbus      atomic.Uint64
+	readerDeferredDispatchNsEvent  atomic.Int64
+	readerDeferredDispatchNsWrite  atomic.Int64
+	readerDeferredDispatchNsModbus atomic.Int64
+	readerReplyDispatchNsEvent     atomic.Int64
+	readerReplyDispatchNsWrite     atomic.Int64
+	readerReplyDispatchNsModbus    atomic.Int64
+	readerLastFrameAtNsEvent       atomic.Int64
+	readerLastFrameAtNsWrite       atomic.Int64
+	readerLastFrameAtNsModbus      atomic.Int64
+	readerDropLastLogAtNs          atomic.Int64
 
 	reconnectFailCount    int
 	reconnectBlockedUntil time.Time
@@ -558,6 +579,7 @@ func (r *realRcuClient) Snapshot(serviceEvents []map[string]interface{}) map[str
 		"hasDaliLineShortCircuit": r.daliLineShortCircuit,
 		"lightingDevices":         r.buildLightingDevicesLocked(),
 		"serviceEvents":           serviceEvents,
+		"readerMetrics":           r.readerMetricsSnapshotLocked(),
 	}
 	if m["mur"] == "Delayed" {
 		m["murDelayedMinutes"] = 15
@@ -580,6 +602,30 @@ func normalizeServiceStates(dnd, mur, laundry string) (string, string, string, b
 		!strings.EqualFold(initialMur, mur) ||
 		!strings.EqualFold(initialLaundry, laundry)
 	return dnd, mur, laundry, changed
+}
+
+func (r *realRcuClient) readerMetricsSnapshotLocked() map[string]interface{} {
+	return map[string]interface{}{
+		string(connChannelEvent):  r.readerMetricsForChannel(connChannelEvent),
+		string(connChannelWrite):  r.readerMetricsForChannel(connChannelWrite),
+		string(connChannelModbus): r.readerMetricsForChannel(connChannelModbus),
+	}
+}
+
+func (r *realRcuClient) readerMetricsForChannel(channel connChannel) map[string]interface{} {
+	lastFrameAt := r.readerLastFrameAtomicForChannel(channel).Load()
+	return map[string]interface{}{
+		"readerDeferredDropCount":       r.readerDeferredDropCountForChannel(channel).Load(),
+		"readerReplyDropCount":          r.readerReplyDropCountForChannel(channel).Load(),
+		"readerQueueDepthHighWatermark": r.readerQueueDepthHwmForChannel(channel).Load(),
+		"readerDeferredDispatchLatencyMs": float64(
+			r.readerDeferredDispatchAtomicForChannel(channel).Load(),
+		) / float64(time.Millisecond),
+		"readerReplyDispatchLatencyMs": float64(
+			r.readerReplyDispatchAtomicForChannel(channel).Load(),
+		) / float64(time.Millisecond),
+		"readerLastFrameTimestampMs": time.Unix(0, lastFrameAt).UnixMilli(),
+	}
 }
 
 func (r *realRcuClient) LightingSummary() map[string]interface{} {
@@ -1991,7 +2037,7 @@ func (r *realRcuClient) drainEventsLockedConn(wait time.Duration) {
 			r.closeConnLocked()
 			return
 		}
-		r.discardUnexpectedInboundLocked("event_drain")
+		r.discardUnexpectedInboundLocked(connChannelEvent, "event_drain")
 		if !time.Now().Before(deadline) {
 			return
 		}
@@ -2015,7 +2061,7 @@ func (r *realRcuClient) drainIncomingFramesLockedConn(wait time.Duration) error 
 		if err := r.pollReaderErrorLocked(); err != nil {
 			return err
 		}
-		r.discardUnexpectedInboundLocked("incoming_drain")
+		r.discardUnexpectedInboundLocked(connChannelEvent, "incoming_drain")
 		if !time.Now().Before(deadline) {
 			return nil
 		}
@@ -2031,6 +2077,7 @@ func (r *realRcuClient) drainIncomingFramesLockedConn(wait time.Duration) error 
 
 func (r *realRcuClient) sendModbusReadAndAwaitAckLocked(register int, count int, shortAddr int) (*modbusReadReturnEvent, error) {
 	msg := buildModbusReadRegisterMessage(register, count, shortAddr)
+	startedAt := time.Now()
 	conn := r.connForChannelLocked(connChannelModbus)
 	if conn == nil {
 		return nil, fmt.Errorf("rcu connection is nil")
@@ -2051,6 +2098,8 @@ func (r *realRcuClient) sendModbusReadAndAwaitAckLocked(register int, count int,
 		}
 		return nil, err
 	}
+	r.recordLastFrameTimestamp(connChannelModbus, time.Now())
+	r.recordDispatchLatency(connChannelModbus, "reply", time.Since(startedAt))
 	if frame == nil || frame.CmdNo != 7 || frame.SubCmdNo != 0 {
 		return nil, fmt.Errorf("unexpected modbus read frame cmdType=%d cmdNo=%d subCmdNo=%d", frame.CmdType, frame.CmdNo, frame.SubCmdNo)
 	}
@@ -2069,6 +2118,7 @@ func (r *realRcuClient) sendModbusReadAndAwaitAckLocked(register int, count int,
 }
 
 func (r *realRcuClient) sendModbusWriteAndAwaitAckLocked(msg []byte, shortAddr int) (*modbusWriteReturnEvent, error) {
+	startedAt := time.Now()
 	conn := r.connForChannelLocked(connChannelModbus)
 	if conn == nil {
 		return nil, fmt.Errorf("rcu connection is nil")
@@ -2089,6 +2139,8 @@ func (r *realRcuClient) sendModbusWriteAndAwaitAckLocked(msg []byte, shortAddr i
 		}
 		return nil, err
 	}
+	r.recordLastFrameTimestamp(connChannelModbus, time.Now())
+	r.recordDispatchLatency(connChannelModbus, "reply", time.Since(startedAt))
 	if frame == nil || frame.CmdNo != 7 || frame.SubCmdNo != 1 {
 		return nil, fmt.Errorf("unexpected modbus write frame cmdType=%d cmdNo=%d subCmdNo=%d", frame.CmdType, frame.CmdNo, frame.SubCmdNo)
 	}
@@ -2517,12 +2569,13 @@ func (r *realRcuClient) readerLoop(
 	errCh chan error,
 	stopCh chan struct{},
 ) {
-	pendingReplies := make([]*rcuFrame, 0, readerOverflowQueueSize())
+	pendingReplies := make([]*readerPendingReply, 0, readerOverflowQueueSize())
 
 	for {
 		for len(pendingReplies) > 0 {
 			select {
-			case replyCh <- pendingReplies[0]:
+			case replyCh <- pendingReplies[0].frame:
+				r.recordDispatchLatency(connChannelEvent, "reply", time.Since(pendingReplies[0].enqueuedAt))
 			case <-stopCh:
 				return
 			}
@@ -2542,11 +2595,15 @@ func (r *realRcuClient) readerLoop(
 			}
 			return
 		}
+		readAt := time.Now()
+		r.recordLastFrameTimestamp(connChannelEvent, readAt)
+		r.recordQueueDepthHighWatermark(connChannelEvent, len(replyCh)+len(deferredCh)+len(pendingReplies))
 		if frame.CmdType == 4 {
 			r.processEvent(frame)
 			if isDeferredEventFrame(frame) {
 				select {
 				case deferredCh <- frame:
+					r.recordDispatchLatency(connChannelEvent, "deferred", time.Since(readAt))
 				case <-stopCh:
 					return
 				}
@@ -2555,16 +2612,21 @@ func (r *realRcuClient) readerLoop(
 		}
 		select {
 		case replyCh <- frame:
+			r.recordDispatchLatency(connChannelEvent, "reply", time.Since(readAt))
 			continue
 		default:
 		}
 		if len(pendingReplies) < cap(pendingReplies) {
-			pendingReplies = append(pendingReplies, frame)
+			pendingReplies = append(pendingReplies, &readerPendingReply{
+				frame:      frame,
+				enqueuedAt: readAt,
+			})
+			r.recordQueueDepthHighWatermark(connChannelEvent, len(replyCh)+len(deferredCh)+len(pendingReplies))
 			r.recordReaderOverflowEnqueue(frame, len(pendingReplies), cap(pendingReplies))
 			continue
 		}
 
-		r.recordReaderDrop("reply", frame, true)
+		r.recordReaderDrop(connChannelEvent, "reply", frame, true)
 		if readerResetOnCriticalDropEnabled() {
 			resetErr := fmt.Errorf(
 				"critical reply queue overflow room=%s cmdNo=%d subCmdNo=%d",
@@ -2593,6 +2655,106 @@ func (r *realRcuClient) shouldLogReaderDropNow() bool {
 	return true
 }
 
+func (r *realRcuClient) readerDeferredDropCountForChannel(channel connChannel) *atomic.Uint64 {
+	switch channel {
+	case connChannelWrite:
+		return &r.readerDeferredDropCountWrite
+	case connChannelModbus:
+		return &r.readerDeferredDropCountModbus
+	default:
+		return &r.readerDeferredDropCountEvent
+	}
+}
+
+func (r *realRcuClient) readerReplyDropCountForChannel(channel connChannel) *atomic.Uint64 {
+	switch channel {
+	case connChannelWrite:
+		return &r.readerReplyDropCountWrite
+	case connChannelModbus:
+		return &r.readerReplyDropCountModbus
+	default:
+		return &r.readerReplyDropCountEvent
+	}
+}
+
+func (r *realRcuClient) readerQueueDepthHwmForChannel(channel connChannel) *atomic.Uint64 {
+	switch channel {
+	case connChannelWrite:
+		return &r.readerQueueDepthHwmWrite
+	case connChannelModbus:
+		return &r.readerQueueDepthHwmModbus
+	default:
+		return &r.readerQueueDepthHwmEvent
+	}
+}
+
+func (r *realRcuClient) readerDeferredDispatchAtomicForChannel(channel connChannel) *atomic.Int64 {
+	switch channel {
+	case connChannelWrite:
+		return &r.readerDeferredDispatchNsWrite
+	case connChannelModbus:
+		return &r.readerDeferredDispatchNsModbus
+	default:
+		return &r.readerDeferredDispatchNsEvent
+	}
+}
+
+func (r *realRcuClient) readerReplyDispatchAtomicForChannel(channel connChannel) *atomic.Int64 {
+	switch channel {
+	case connChannelWrite:
+		return &r.readerReplyDispatchNsWrite
+	case connChannelModbus:
+		return &r.readerReplyDispatchNsModbus
+	default:
+		return &r.readerReplyDispatchNsEvent
+	}
+}
+
+func (r *realRcuClient) readerLastFrameAtomicForChannel(channel connChannel) *atomic.Int64 {
+	switch channel {
+	case connChannelWrite:
+		return &r.readerLastFrameAtNsWrite
+	case connChannelModbus:
+		return &r.readerLastFrameAtNsModbus
+	default:
+		return &r.readerLastFrameAtNsEvent
+	}
+}
+
+func (r *realRcuClient) recordDispatchLatency(channel connChannel, lane string, latency time.Duration) {
+	if latency < 0 {
+		latency = 0
+	}
+	ns := latency.Nanoseconds()
+	switch lane {
+	case "deferred":
+		r.readerDeferredDispatchAtomicForChannel(channel).Store(ns)
+	default:
+		r.readerReplyDispatchAtomicForChannel(channel).Store(ns)
+	}
+}
+
+func (r *realRcuClient) recordQueueDepthHighWatermark(channel connChannel, depth int) {
+	if depth < 0 {
+		return
+	}
+	counter := r.readerQueueDepthHwmForChannel(channel)
+	newVal := uint64(depth)
+	for {
+		current := counter.Load()
+		if newVal <= current {
+			return
+		}
+		if counter.CompareAndSwap(current, newVal) {
+			return
+		}
+	}
+}
+
+func (r *realRcuClient) recordLastFrameTimestamp(channel connChannel, at time.Time) {
+	r.readerLastFrameAtomicForChannel(channel).Store(at.UnixNano())
+}
+
 func (r *realRcuClient) recordReaderOverflowEnqueue(frame *rcuFrame, size, max int) {
 	if !r.shouldLogReaderDropNow() {
 		return
@@ -2608,27 +2770,44 @@ func (r *realRcuClient) recordReaderOverflowEnqueue(frame *rcuFrame, size, max i
 	)
 }
 
-func (r *realRcuClient) recordReaderDrop(channel string, frame *rcuFrame, critical bool) {
+func (r *realRcuClient) recordReaderDrop(channel connChannel, lane string, frame *rcuFrame, critical bool) {
 	var count uint64
-	switch channel {
+	switch lane {
 	case "reply":
-		count = r.readerReplyDropCount.Add(1)
+		count = r.readerReplyDropCountForChannel(channel).Add(1)
 	default:
-		count = r.readerDeferredDropCount.Add(1)
+		count = r.readerDeferredDropCountForChannel(channel).Add(1)
 	}
 	if !r.shouldLogReaderDropNow() {
 		return
 	}
+	level := "warning"
+	if channel == connChannelEvent {
+		level = "critical_alarm"
+	} else if channel == connChannelModbus {
+		level = "degrade_info"
+	}
 	log.Printf(
-		"rcu.reader.drop room=%s channel=%s critical=%t count=%d cmdType=%d cmdNo=%d subCmdNo=%d",
+		"rcu.reader.drop room=%s channel=%s lane=%s level=%s critical=%t count=%d cmdType=%d cmdNo=%d subCmdNo=%d",
 		r.room,
 		channel,
+		lane,
+		level,
 		critical,
 		count,
 		frame.CmdType,
 		frame.CmdNo,
 		frame.SubCmdNo,
 	)
+	if channel == connChannelEvent {
+		log.Printf(
+			"rcu.alarm.critical room=%s type=reader_drop channel=%s lane=%s count=%d",
+			r.room,
+			channel,
+			lane,
+			count,
+		)
+	}
 }
 
 func (r *realRcuClient) pollReaderErrorLocked() error {
@@ -2643,7 +2822,7 @@ func (r *realRcuClient) pollReaderErrorLocked() error {
 	}
 }
 
-func (r *realRcuClient) discardUnexpectedInboundLocked(context string) {
+func (r *realRcuClient) discardUnexpectedInboundLocked(sourceChannel connChannel, context string) {
 	const maxDrains = 64
 	drained := 0
 	for drained < maxDrains {
@@ -2655,13 +2834,15 @@ func (r *realRcuClient) discardUnexpectedInboundLocked(context string) {
 				drained++
 				if frame != nil {
 					log.Printf(
-						"rcu.frame.discard room=%s context=%s channel=deferred cmdType=%d cmdNo=%d subCmdNo=%d",
+						"rcu.frame.discard room=%s sourceChannel=%s context=%s channel=deferred cmdType=%d cmdNo=%d subCmdNo=%d",
 						r.room,
+						sourceChannel,
 						context,
 						frame.CmdType,
 						frame.CmdNo,
 						frame.SubCmdNo,
 					)
+					r.recordReaderDrop(sourceChannel, "deferred", frame, sourceChannel == connChannelEvent)
 				}
 			default:
 			}
@@ -2673,13 +2854,15 @@ func (r *realRcuClient) discardUnexpectedInboundLocked(context string) {
 				drained++
 				if frame != nil {
 					log.Printf(
-						"rcu.frame.discard room=%s context=%s channel=reply cmdType=%d cmdNo=%d subCmdNo=%d",
+						"rcu.frame.discard room=%s sourceChannel=%s context=%s channel=reply cmdType=%d cmdNo=%d subCmdNo=%d",
 						r.room,
+						sourceChannel,
 						context,
 						frame.CmdType,
 						frame.CmdNo,
 						frame.SubCmdNo,
 					)
+					r.recordReaderDrop(sourceChannel, "reply", frame, sourceChannel == connChannelEvent)
 				}
 			default:
 			}
@@ -2688,7 +2871,7 @@ func (r *realRcuClient) discardUnexpectedInboundLocked(context string) {
 			return
 		}
 	}
-	log.Printf("rcu.frame.discard room=%s context=%s reached_limit=%d", r.room, context, maxDrains)
+	log.Printf("rcu.frame.discard room=%s sourceChannel=%s context=%s reached_limit=%d", r.room, sourceChannel, context, maxDrains)
 }
 
 func (r *realRcuClient) waitForReplyFrameLocked(timeout time.Duration) (*rcuFrame, error) {
@@ -2738,7 +2921,7 @@ func (r *realRcuClient) waitForMatchingReplyFrameLocked(timeout time.Duration, m
 		case err := <-r.readerErrCh:
 			return nil, err
 		case <-timer.C:
-			r.discardUnexpectedInboundLocked("timeout_reply_wait")
+			r.discardUnexpectedInboundLocked(connChannelEvent, "timeout_reply_wait")
 			return nil, fmt.Errorf("i/o timeout waiting for reply frame after %s", timeout)
 		}
 	}
@@ -2797,7 +2980,7 @@ func (r *realRcuClient) waitForDeferredFrameLocked(
 		case err := <-r.readerErrCh:
 			return nil, err
 		case <-timer.C:
-			r.discardUnexpectedInboundLocked("timeout_deferred_wait")
+			r.discardUnexpectedInboundLocked(connChannelEvent, "timeout_deferred_wait")
 			return nil, fmt.Errorf("i/o timeout waiting for deferred event after %s", timeout)
 		}
 	}
@@ -2893,7 +3076,7 @@ func (r *realRcuClient) sendRequestOnChannelLockedWithTimeoutAndMatcher(
 	if channel != connChannelEvent {
 		return nil, fmt.Errorf("request/reply matcher flow is only supported on event channel")
 	}
-	r.discardUnexpectedInboundLocked("before_request")
+	r.discardUnexpectedInboundLocked(channel, "before_request")
 	if err := conn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
 		return nil, err
 	}
@@ -2944,6 +3127,7 @@ func (r *realRcuClient) sendCommandNoResponseLocked(msg []byte) error {
 }
 
 func (r *realRcuClient) sendWriteRequestLockedWithTimeout(msg []byte, timeout time.Duration) (*rcuFrame, error) {
+	startedAt := time.Now()
 	conn := r.connForChannelLocked(connChannelWrite)
 	if conn == nil {
 		return nil, fmt.Errorf("rcu connection is nil")
@@ -2970,6 +3154,8 @@ func (r *realRcuClient) sendWriteRequestLockedWithTimeout(msg []byte, timeout ti
 		}
 		return nil, err
 	}
+	r.recordLastFrameTimestamp(connChannelWrite, time.Now())
+	r.recordDispatchLatency(connChannelWrite, "reply", time.Since(startedAt))
 	matcher := matcherFromRequest(msg, "write_request_reply")
 	if ok, reason := matcher.match(frame); !ok {
 		return nil, fmt.Errorf("write request reply mismatch: %s", reason)
