@@ -332,6 +332,14 @@ const (
 	connChannelModbus connChannel = "modbus"
 )
 
+type modbusBreakerState string
+
+const (
+	modbusBreakerClosed   modbusBreakerState = "closed"
+	modbusBreakerOpen     modbusBreakerState = "open"
+	modbusBreakerHalfOpen modbusBreakerState = "half-open"
+)
+
 type realRcuClient struct {
 	room string
 	cfg  RcuConfig
@@ -401,6 +409,11 @@ type realRcuClient struct {
 
 	reconnectFailCount    int
 	reconnectBlockedUntil time.Time
+
+	modbusFailCount    int
+	modbusBreakerState modbusBreakerState
+	modbusNextProbeAt  time.Time
+	modbusLastErr      string
 }
 
 func newRealRcuClient(room string, cfg RcuConfig) *realRcuClient {
@@ -417,6 +430,7 @@ func newRealRcuClient(room string, cfg RcuConfig) *realRcuClient {
 		normalOpCh:              make(chan opRequest, 128),
 		opStop:                  make(chan struct{}),
 		sceneCoalescingActive:   sceneCoalescingEnabled(),
+		modbusBreakerState:      modbusBreakerClosed,
 		hvac: hvacState{
 			OnOff:              intPtr(1),
 			SetPoint:           floatPtr(22.0),
@@ -1547,14 +1561,18 @@ func (r *realRcuClient) initializeLockedConn() error {
 
 	r.initialized.Store(true)
 	log.Printf("rcu.initialized room=%s outputs=%d", r.room, len(r.outputs))
+	r.startModbusSyncIfEnabled()
+	return nil
+}
+
+func (r *realRcuClient) startModbusSyncIfEnabled() {
 	if modbusSyncEnabled() {
 		r.bootstrapThermostatRegistersLockedConn()
 		// Keep HVAC communication health fresh so comError is cleared when reads recover.
 		r.startModbusSyncLoop()
-	} else {
-		log.Printf("rcu.modbus.sync disabled room=%s reason=protocol_guard", r.room)
+		return
 	}
-	return nil
+	log.Printf("rcu.modbus.sync disabled room=%s reason=protocol_guard", r.room)
 }
 
 func (r *realRcuClient) refreshCoreStateLockedConn() error {
@@ -1745,6 +1763,8 @@ func (r *realRcuClient) startModbusSyncLoop() {
 			normalEvery := modbusPollInterval("TESTCOMM_MODBUS_POLL_NORMAL_MS", 15*time.Second)
 			slowEvery := modbusPollInterval("TESTCOMM_MODBUS_POLL_SLOW_MS", 45*time.Second)
 			maxBackoff := modbusPollInterval("TESTCOMM_MODBUS_POLL_BACKOFF_MAX_MS", 60*time.Second)
+			breakerProbeEvery := modbusPollInterval("TESTCOMM_MODBUS_BREAKER_PROBE_MS", 10*time.Second)
+			breakerFailThreshold := modbusPollInt("TESTCOMM_MODBUS_BREAKER_FAIL_THRESHOLD", 3, 1)
 
 			type pollGroup struct {
 				name       string
@@ -1787,12 +1807,34 @@ func (r *realRcuClient) startModbusSyncLoop() {
 				case <-ticker.C:
 				}
 				r.connMu.Lock()
+				now := time.Now()
+				if r.modbusBreakerState == modbusBreakerOpen {
+					if now.Before(r.modbusNextProbeAt) {
+						r.connMu.Unlock()
+						continue
+					}
+					r.modbusBreakerState = modbusBreakerHalfOpen
+					logPollingf(
+						"rcu.modbus.breaker transition room=%s state=%s failCount=%d",
+						r.room,
+						r.modbusBreakerState,
+						r.modbusFailCount,
+					)
+				}
 				if err := r.ensureConnectedForChannelLocked(connChannelModbus); err != nil {
+					r.modbusFailCount++
+					r.modbusLastErr = err.Error()
+					if r.modbusFailCount >= breakerFailThreshold {
+						r.modbusBreakerState = modbusBreakerOpen
+						r.modbusNextProbeAt = now.Add(breakerProbeEvery)
+					}
 					r.connMu.Unlock()
 					continue
 				}
 				r.drainEventsLockedConn(200 * time.Millisecond)
-				now := time.Now()
+				now = time.Now()
+				halfOpenProbeInFlight := r.modbusBreakerState == modbusBreakerHalfOpen
+				successfulPoll := true
 				for _, group := range groups {
 					if now.Before(group.nextDue) {
 						continue
@@ -1805,13 +1847,19 @@ func (r *realRcuClient) startModbusSyncLoop() {
 							if shouldCloseConnectionForModbusError(err) {
 								r.closeConnForChannelLocked(connChannelModbus)
 							}
+							r.modbusFailCount++
+							r.modbusLastErr = err.Error()
 							ok = false
+							successfulPoll = false
 							logPollingf("rcu.modbus.poll failed room=%s group=%s reg=0x%X error=%v", r.room, group.name, reg, err)
 							break
 						}
 						if ev.Ack != modbusAckOK {
 							r.setHvacComError(1)
+							r.modbusFailCount++
+							r.modbusLastErr = fmt.Sprintf("modbus nack ack=0x%X reg=0x%X", ev.Ack, reg)
 							ok = false
+							successfulPoll = false
 							logPollingf("rcu.modbus.poll nack room=%s group=%s reg=0x%X ack=0x%X", r.room, group.name, reg, ev.Ack)
 							break
 						}
@@ -1833,6 +1881,26 @@ func (r *realRcuClient) startModbusSyncLoop() {
 						group.name,
 						group.currentGap.Milliseconds(),
 						ok,
+					)
+				}
+				if successfulPoll {
+					r.modbusFailCount = 0
+					r.modbusLastErr = ""
+					if halfOpenProbeInFlight || r.modbusBreakerState != modbusBreakerClosed {
+						r.modbusBreakerState = modbusBreakerClosed
+						r.modbusNextProbeAt = time.Time{}
+						logPollingf("rcu.modbus.breaker transition room=%s state=%s", r.room, r.modbusBreakerState)
+					}
+				} else if r.modbusFailCount >= breakerFailThreshold {
+					r.modbusBreakerState = modbusBreakerOpen
+					r.modbusNextProbeAt = time.Now().Add(breakerProbeEvery)
+					logPollingf(
+						"rcu.modbus.breaker transition room=%s state=%s failCount=%d nextProbeInMs=%d lastErr=%s",
+						r.room,
+						r.modbusBreakerState,
+						r.modbusFailCount,
+						time.Until(r.modbusNextProbeAt).Milliseconds(),
+						r.modbusLastErr,
 					)
 				}
 				r.connMu.Unlock()
@@ -3919,6 +3987,18 @@ func modbusPollInterval(envKey string, defaultValue time.Duration) time.Duration
 		return defaultValue
 	}
 	return time.Duration(ms) * time.Millisecond
+}
+
+func modbusPollInt(envKey string, defaultValue int, minValue int) int {
+	raw := strings.TrimSpace(os.Getenv(envKey))
+	if raw == "" {
+		return defaultValue
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil || v < minValue {
+		return defaultValue
+	}
+	return v
 }
 
 func shouldCloseConnectionForModbusError(err error) bool {
