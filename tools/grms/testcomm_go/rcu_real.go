@@ -809,12 +809,28 @@ func (r *realRcuClient) doUpdateLightingLevel(address, level int) (map[string]in
 			} else {
 				msg = []byte{rcuHeader, 0x06, 0x00, 0x03, 0x04, 0x02, 0x00, byte(address), byte(percentToDaliLevel(level))}
 			}
-			if _, err := r.sendWriteRequestLockedWithTimeout(msg, timeout); err != nil {
-				log.Printf("rcu.lighting set target failed room=%s address=%d level=%d error=%v", r.room, address, level, err)
-				r.closeConnForChannelLocked(connChannelWrite)
-				return nil, err
+			if err := r.ensureConnectedWithTimeoutForChannelLocked(connChannelWrite, connectTimeout); err == nil {
+				if _, err := r.sendWriteRequestLockedWithTimeout(msg, timeout); err == nil {
+					log.Printf("cmd.sent room=%s kind=lighting_level address=%d level=%d", r.room, address, level)
+				} else {
+					log.Printf("rcu.lighting set target failed room=%s address=%d level=%d error=%v", r.room, address, level, err)
+					r.closeConnForChannelLocked(connChannelWrite)
+					return nil, err
+				}
+			} else {
+				log.Printf(
+					"rcu.lighting fallback room=%s address=%d level=%d channel=event reason=%v",
+					r.room, address, level, err,
+				)
+				if err := r.ensureConnectedWithTimeoutLocked(connectTimeout); err != nil {
+					return nil, err
+				}
+				if _, err := r.sendRequestLockedWithTimeout(msg, timeout); err != nil {
+					log.Printf("rcu.lighting set target failed room=%s address=%d level=%d error=%v", r.room, address, level, err)
+					return nil, err
+				}
+				log.Printf("cmd.sent room=%s kind=lighting_level address=%d level=%d channel=event", r.room, address, level)
 			}
-			log.Printf("cmd.sent room=%s kind=lighting_level address=%d level=%d", r.room, address, level)
 
 			r.mu.RLock()
 			defer r.mu.RUnlock()
@@ -992,20 +1008,42 @@ func (r *realRcuClient) doCallLightingScene(scene int) (map[string]interface{}, 
 			timeout:  timeout,
 			metadata: fmt.Sprintf("scene=%d attempt=%d requireResponse=%t", scene, attempt, requireResponse),
 			exec: func(timeout time.Duration) (map[string]interface{}, error) {
-				if requireResponse {
-					if _, err := r.sendWriteRequestLockedWithTimeout(msg, timeout); err != nil {
-						log.Printf("rcu.scene.trigger failed room=%s scene=%d error=%v", r.room, scene, err)
-						r.closeConnForChannelLocked(connChannelWrite)
-						return nil, err
+				if err := r.ensureConnectedWithTimeoutForChannelLocked(connChannelWrite, connectTimeout); err == nil {
+					if requireResponse {
+						if _, err := r.sendWriteRequestLockedWithTimeout(msg, timeout); err != nil {
+							log.Printf("rcu.scene.trigger failed room=%s scene=%d error=%v", r.room, scene, err)
+							r.closeConnForChannelLocked(connChannelWrite)
+							return nil, err
+						}
+					} else {
+						if err := r.sendCommandNoResponseLockedWithTimeout(msg, timeout); err != nil {
+							log.Printf("rcu.scene.trigger write failed room=%s scene=%d error=%v", r.room, scene, err)
+							r.closeConnForChannelLocked(connChannelWrite)
+							return nil, err
+						}
 					}
+					log.Printf("rcu.scene.trigger sent room=%s scene=%d group=%d channel=write", r.room, scene, sceneGroupByte)
 				} else {
-					if err := r.sendCommandNoResponseLockedWithTimeout(msg, timeout); err != nil {
-						log.Printf("rcu.scene.trigger write failed room=%s scene=%d error=%v", r.room, scene, err)
-						r.closeConnForChannelLocked(connChannelWrite)
+					log.Printf(
+						"rcu.scene.trigger fallback room=%s scene=%d group=%d channel=event reason=%v",
+						r.room, scene, sceneGroupByte, err,
+					)
+					if err := r.ensureConnectedWithTimeoutLocked(connectTimeout); err != nil {
 						return nil, err
 					}
+					if requireResponse {
+						if _, err := r.sendRequestLockedWithTimeout(msg, timeout); err != nil {
+							log.Printf("rcu.scene.trigger failed room=%s scene=%d error=%v", r.room, scene, err)
+							return nil, err
+						}
+					} else {
+						if err := r.sendCommandNoResponseOnChannelLockedWithTimeout(connChannelEvent, msg, timeout); err != nil {
+							log.Printf("rcu.scene.trigger write failed room=%s scene=%d error=%v", r.room, scene, err)
+							return nil, err
+						}
+					}
+					log.Printf("rcu.scene.trigger sent room=%s scene=%d group=%d channel=event", r.room, scene, sceneGroupByte)
 				}
-				log.Printf("rcu.scene.trigger sent room=%s scene=%d group=%d", r.room, scene, sceneGroupByte)
 				return map[string]interface{}{}, nil
 			},
 		})
@@ -1227,12 +1265,15 @@ func (r *realRcuClient) executeOperation(req opRequest) {
 	defer r.connMu.Unlock()
 
 	channel := connChannelEvent
+	preflightRequired := true
 	if req.kind == opKindScene || req.kind == opKindLightingLevel {
-		channel = connChannelWrite
+		preflightRequired = false
 	}
-	if err := r.ensureConnectedWithTimeoutForChannelLocked(channel, connectTimeout); err != nil {
-		req.resultCh <- opResult{err: err, lockWaitMs: lockWaitMs}
-		return
+	if preflightRequired {
+		if err := r.ensureConnectedWithTimeoutForChannelLocked(channel, connectTimeout); err != nil {
+			req.resultCh <- opResult{err: err, lockWaitMs: lockWaitMs}
+			return
+		}
 	}
 
 	payload, err := req.exec(req.timeout)
@@ -1241,7 +1282,11 @@ func (r *realRcuClient) executeOperation(req opRequest) {
 			log.Printf("rcu.op.timeout room=%s kind=%s error=%v", r.room, req.kind, err)
 		}
 		if shouldResetConnOnError(req.kind, err) {
-			r.closeConnForChannelLocked(channel)
+			if req.kind == opKindScene || req.kind == opKindLightingLevel {
+				r.closeConnForChannelLocked(connChannelWrite)
+			} else {
+				r.closeConnForChannelLocked(channel)
+			}
 		}
 		req.resultCh <- opResult{err: err, lockWaitMs: lockWaitMs}
 		return
@@ -3153,6 +3198,31 @@ func (r *realRcuClient) sendCommandNoResponseLocked(msg []byte) error {
 	return r.sendCommandNoResponseLockedWithTimeout(msg, timeoutFor(opKindScene))
 }
 
+func (r *realRcuClient) sendCommandNoResponseOnChannelLockedWithTimeout(
+	channel connChannel,
+	msg []byte,
+	timeout time.Duration,
+) error {
+	conn := r.connForChannelLocked(channel)
+	if conn == nil {
+		return fmt.Errorf("rcu connection is nil")
+	}
+	if timeout <= 0 {
+		timeout = sceneWriteOnlyTimeout
+	}
+	if timeout > timeoutCap {
+		timeout = timeoutCap
+	}
+	if err := conn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
+		return err
+	}
+	_, err := conn.Write(msg)
+	if err == nil {
+		r.recordLastFrameTimestamp(channel, time.Now())
+	}
+	return err
+}
+
 func (r *realRcuClient) sendWriteRequestLockedWithTimeout(msg []byte, timeout time.Duration) (*rcuFrame, error) {
 	startedAt := time.Now()
 	conn := r.connForChannelLocked(connChannelWrite)
@@ -3191,21 +3261,7 @@ func (r *realRcuClient) sendWriteRequestLockedWithTimeout(msg []byte, timeout ti
 }
 
 func (r *realRcuClient) sendCommandNoResponseLockedWithTimeout(msg []byte, timeout time.Duration) error {
-	conn := r.connForChannelLocked(connChannelWrite)
-	if conn == nil {
-		return fmt.Errorf("rcu connection is nil")
-	}
-	if timeout <= 0 {
-		timeout = sceneWriteOnlyTimeout
-	}
-	if timeout > timeoutCap {
-		timeout = timeoutCap
-	}
-	if err := conn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
-		return err
-	}
-	_, err := conn.Write(msg)
-	return err
+	return r.sendCommandNoResponseOnChannelLockedWithTimeout(connChannelWrite, msg, timeout)
 }
 
 func sceneDebugEnabled() bool {

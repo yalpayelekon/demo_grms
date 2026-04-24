@@ -106,12 +106,12 @@ func TestSchedulerPrioritizesSceneOverRefresh(t *testing.T) {
 	src := mustReadRcuRealSource(t)
 	body := mustExtractFuncBlock(t, src, "func (r *realRcuClient) opWorkerLoop(")
 	firstPriority := strings.Index(body, "case req := <-r.priorityOpCh")
-	normalCase := strings.LastIndex(body, "case req := <-r.normalOpCh")
-	if firstPriority < 0 || normalCase < 0 {
-		t.Fatalf("priority/normal channel cases not found in opWorkerLoop")
+	mediumCase := strings.LastIndex(body, "case req := <-r.mediumOpCh")
+	if firstPriority < 0 || mediumCase < 0 {
+		t.Fatalf("priority/medium channel cases not found in opWorkerLoop")
 	}
-	if firstPriority > normalCase {
-		t.Fatalf("priority channel must be checked before normal channel")
+	if firstPriority > mediumCase {
+		t.Fatalf("priority channel must be checked before medium channel")
 	}
 }
 
