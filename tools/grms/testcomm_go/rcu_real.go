@@ -273,6 +273,8 @@ type realRcuClient struct {
 	initialized bool
 	gtinName    string
 
+	masterLightingOverride *bool
+
 	isDoorOpened                      bool
 	hasDoorAlarm                      bool
 	isRoomOccupied                    bool
@@ -759,6 +761,7 @@ func (r *realRcuClient) ExecuteRawCommand(frame []byte, requestID string) map[st
 			// Treat raw scene-like writes as scene activity so refresh polling
 			// waits for the same cool-down window and avoids read/write races.
 			r.lastSceneAt.Store(time.Now().UnixNano())
+			r.applyCachedMasterLighting(frame)
 			log.Printf("rcu.raw.trigger sent room=%s frame_hex=% X requestId=%s", r.room, frame, requestID)
 			return map[string]interface{}{
 				"triggered": true,
@@ -783,6 +786,48 @@ func (r *realRcuClient) ExecuteRawCommand(frame []byte, requestID string) map[st
 	out := cloneMap(opRes.payload)
 	out["lockWaitMs"] = opRes.lockWaitMs
 	return out
+}
+
+func (r *realRcuClient) applyCachedMasterLighting(frame []byte) {
+	enabled, ok := decodeMasterLightingCommand(frame)
+	if !ok {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.masterLightingOverride = boolPtr(enabled)
+	if !enabled {
+		for _, dev := range r.outputs {
+			dev.ActualLevel = 0
+			dev.TargetLevel = 0
+			dev.Status = "No"
+		}
+	}
+}
+
+func decodeMasterLightingCommand(frame []byte) (bool, bool) {
+	if len(frame) < 14 {
+		return false, false
+	}
+	prefix := []byte{0x03, 0x04, 0x03, 0x01, 0x10, 0x04, 0x05, 0x00, 0x07}
+	for i, b := range prefix {
+		if frame[3+i] != b {
+			return false, false
+		}
+	}
+	if frame[len(frame)-2] != 0x00 {
+		return false, false
+	}
+	switch frame[len(frame)-1] {
+	case 0x00:
+		return true, true
+	case 0x01:
+		return false, true
+	default:
+		return false, false
+	}
 }
 
 func (r *realRcuClient) doCallLightingScene(scene int) (map[string]interface{}, error) {
@@ -2833,6 +2878,9 @@ func (r *realRcuClient) derivedPowerOnOffLocked() int {
 }
 
 func (r *realRcuClient) isLightingOnLocked() bool {
+	if r.masterLightingOverride != nil {
+		return *r.masterLightingOverride
+	}
 	for _, d := range r.outputs {
 		if d.ActualLevel > 0 || strings.Contains(strings.ToUpper(d.Status), "LAMP_ON") {
 			return true
@@ -3037,6 +3085,7 @@ func decodeTemperature(v int) float64 { return float64(v) / 10.0 }
 
 func intPtr(v int) *int           { return &v }
 func floatPtr(v float64) *float64 { return &v }
+func boolPtr(v bool) *bool        { return &v }
 
 func round1(v float64) float64 {
 	return math.Round(v*10) / 10
