@@ -21,7 +21,7 @@ func TestRefreshSkippedDuringSceneWindow(t *testing.T) {
 	t.Cleanup(r.stopCommandWorker)
 
 	r.lastSceneAt.Store(time.Now().UnixNano())
-	outcome, err := r.enqueueRefreshOps(opPriorityNormal)
+	outcome, err := r.enqueueRefreshOps(opPriorityMedium)
 	if err != nil {
 		t.Fatalf("enqueueRefreshOps() error: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestRefreshBudgetProcessesOnlyConfiguredBatch(t *testing.T) {
 	}
 	r.mu.Unlock()
 
-	outcome, err := r.enqueueRefreshOps(opPriorityNormal)
+	outcome, err := r.enqueueRefreshOps(opPriorityMedium)
 	if err != nil {
 		t.Fatalf("enqueueRefreshOps() error: %v", err)
 	}
@@ -69,14 +69,14 @@ func TestRefreshCursorWrapsAcrossCycles(t *testing.T) {
 	}
 	r.mu.Unlock()
 
-	if _, err := r.enqueueRefreshOps(opPriorityNormal); err != nil {
+	if _, err := r.enqueueRefreshOps(opPriorityMedium); err != nil {
 		t.Fatalf("first enqueueRefreshOps() error: %v", err)
 	}
 	r.mu.Lock()
 	r.lastUpdate = time.Now().Add(-2 * time.Second)
 	r.mu.Unlock()
 
-	if _, err := r.enqueueRefreshOps(opPriorityNormal); err != nil {
+	if _, err := r.enqueueRefreshOps(opPriorityMedium); err != nil {
 		t.Fatalf("second enqueueRefreshOps() error: %v", err)
 	}
 	r.mu.RLock()

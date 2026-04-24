@@ -1154,7 +1154,23 @@ func (r *realRcuClient) opWorkerLoop() {
 		default:
 		}
 
-		if mediumSinceLow >= mediumBeforeLow {
+		if mediumSinceLow < mediumBeforeLow {
+			// While medium quota has not been consumed, only schedule priority+medium.
+			// If medium is empty, allow low as a fallback to avoid starvation.
+			select {
+			case <-r.opStop:
+				return
+			case req := <-r.priorityOpCh:
+				mediumSinceLow = 0
+				r.executeOperation(req)
+				continue
+			case req := <-r.mediumOpCh:
+				mediumSinceLow++
+				r.executeOperation(req)
+				continue
+			default:
+			}
+
 			select {
 			case <-r.opStop:
 				return
@@ -1167,6 +1183,8 @@ func (r *realRcuClient) opWorkerLoop() {
 				r.executeOperation(req)
 				continue
 			default:
+				time.Sleep(2 * time.Millisecond)
+				continue
 			}
 		}
 
