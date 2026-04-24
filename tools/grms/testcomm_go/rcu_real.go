@@ -229,6 +229,14 @@ const (
 	daliLineStatusShortCircuit = 1
 )
 
+var cachedSceneRawLevels = map[int]map[int]int{
+	1: {8: 254, 9: 254, 10: 254, 12: 254, 15: 254, 16: 254, 17: 254, 18: 254},
+	2: {8: 228, 9: 228, 10: 228, 12: 228, 15: 228, 16: 228, 17: 228, 18: 228},
+	3: {8: 0, 9: 0, 10: 0, 12: 169, 15: 0, 16: 0, 17: 0, 18: 169},
+	4: {8: 0, 9: 0, 10: 0, 12: 0, 15: 0, 16: 0, 17: 169, 18: 0},
+	5: {8: 0, 9: 209, 10: 209, 12: 0, 15: 0, 16: 209, 17: 0, 18: 0},
+}
+
 const (
 	daliLineStatusQueryTimeout = 1200 * time.Millisecond
 	daliLineStatusDisableAfter = 2
@@ -831,6 +839,7 @@ func (r *realRcuClient) doCallLightingScene(scene int) (map[string]interface{}, 
 		lastLockWaitMs = opRes.lockWaitMs
 		if opRes.err == nil {
 			r.lastSceneAt.Store(time.Now().UnixNano())
+			r.applyCachedScene(scene)
 			status := "accepted"
 			resp := map[string]interface{}{
 				"scene":           scene,
@@ -879,6 +888,38 @@ func (r *realRcuClient) doCallLightingScene(scene int) (map[string]interface{}, 
 			"error":           fmt.Sprintf("%v", lastErr),
 		},
 		err: lastErr,
+	}
+}
+
+func (r *realRcuClient) applyCachedScene(scene int) {
+	sceneLevels, ok := cachedSceneRawLevels[scene]
+	if !ok || len(sceneLevels) == 0 {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for address, rawLevel := range sceneLevels {
+		dev := r.outputs[address]
+		if dev == nil {
+			continue
+		}
+
+		level := 0
+		if dev.Onboard {
+			level = rcuLevelToPercent(rawLevel)
+		} else {
+			level = daliLevelToPercent(rawLevel)
+		}
+
+		dev.TargetLevel = level
+		dev.ActualLevel = level
+		if level > 0 {
+			dev.Status = "LAMP_ON"
+		} else {
+			dev.Status = "No"
+		}
 	}
 }
 
