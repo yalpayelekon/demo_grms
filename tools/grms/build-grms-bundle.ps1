@@ -13,6 +13,29 @@ function Write-Info {
     Write-Host "[grms-bundle] $Message"
 }
 
+function Invoke-NativeLogged {
+    # Flutter (and other tools) write progress/warnings to stderr. With
+    # $ErrorActionPreference=Stop, `2>&1` turns those into terminating ErrorRecords.
+    # Stream output safely and rely on $LASTEXITCODE for success/failure.
+    param(
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Command
+    )
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $Command 2>&1 | ForEach-Object {
+            if ($_ -is [System.Management.Automation.ErrorRecord]) {
+                Write-Host $_.ToString()
+            } else {
+                Write-Host $_
+            }
+        }
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+}
+
 function Resolve-RepoRoot {
     $scriptDir = Split-Path -Parent $PSCommandPath
     $root = Resolve-Path (Join-Path $scriptDir "..\..")
@@ -46,6 +69,39 @@ function Assert-PathExists {
     }
 }
 
+function Initialize-GoCgoToolchain {
+    # testcomm_go depends on github.com/mattn/go-sqlite3, which requires CGO + a working
+    # MinGW gcc on Windows. A common failure mode is CC pointing at MSYS2 gcc while a
+    # different gcc (e.g. Scoop) is first on PATH — cgo then exits with status 2 and no
+    # useful message. Pin CC/CXX to one compiler and put its bin dir first on PATH.
+    Assert-CommandExists -Name "gcc"
+
+    $gccPath = $null
+    if (-not [string]::IsNullOrWhiteSpace($env:CC) -and (Test-Path -LiteralPath $env:CC)) {
+        $gccPath = (Resolve-Path -LiteralPath $env:CC).Path
+    } else {
+        $gccPath = (Get-Command gcc).Source
+    }
+
+    $gccDir = Split-Path -Parent $gccPath
+    $gppPath = Join-Path $gccDir "g++.exe"
+    if (-not (Test-Path -LiteralPath $gppPath)) {
+        $gppCmd = Get-Command g++ -ErrorAction SilentlyContinue
+        if ($gppCmd) {
+            $gppPath = $gppCmd.Source
+        } else {
+            throw "g++ not found next to gcc at $gccDir (required for CGO builds)."
+        }
+    }
+
+    $env:CC = $gccPath
+    $env:CXX = $gppPath
+    $env:CGO_ENABLED = "1"
+    $env:PATH = "$gccDir;$env:PATH"
+
+    Write-Info "Using CGO toolchain: CC=$env:CC"
+}
+
 function Build-TestCommGo {
     param(
         [string]$ProjectPath,
@@ -72,14 +128,14 @@ function Build-FlutterGrems {
         throw "pubspec.yaml not found in $ProjectPath"
     }
 
-    & flutter pub get 2>&1 | ForEach-Object { Write-Host $_ }
+    Invoke-NativeLogged { flutter pub get }
     if ($LASTEXITCODE -ne 0) {
         throw "flutter pub get failed with exit code $LASTEXITCODE"
     }
 
-    $buildArgs = @("build", "web", "--no-pub", "--release", "--base-href", "/")
+    $buildArgs = @("build", "web", "--no-pub", "--release", "--base-href", "/", "--no-wasm-dry-run")
     if ($Configuration -ieq "debug") {
-        $buildArgs = @("build", "web", "--no-pub", "--base-href", "/")
+        $buildArgs = @("build", "web", "--no-pub", "--base-href", "/", "--no-wasm-dry-run")
     }
 
     $buildArgs += @("--dart-define=GREMS_DEPLOYMENT_MODE=deployed")
@@ -87,7 +143,7 @@ function Build-FlutterGrems {
         $buildArgs += @("--dart-define=TESTCOMM_BASE_URL=$FrontendApiBaseUrl")
     }
 
-    & flutter @buildArgs 2>&1 | ForEach-Object { Write-Host $_ }
+    Invoke-NativeLogged { flutter @buildArgs }
     if ($LASTEXITCODE -ne 0) {
         throw "flutter build web failed with exit code $LASTEXITCODE"
     }
@@ -125,6 +181,7 @@ Assert-PathExists -Path $flutterAppPath -Description "Flutter GRMS app path"
 Assert-PathExists -Path $testcommPath -Description "TestComm Go path"
 Assert-PathExists -Path $launcherPath -Description "Launcher project path"
 Assert-PathExists -Path $testcommConfigPath -Description "TestComm config path"
+Initialize-GoCgoToolchain
 
 Write-Info "Preparing output directories..."
 Ensure-Directory -Path $distPath
@@ -156,7 +213,8 @@ Build-GrmsLauncher -LauncherPath $launcherPath -OutputExe $launcherExePath
 
 Write-Info "GRMS bundle built successfully."
 Write-Info "Bundle location: $distPath"
-Write-Info "To run, open a PowerShell window, cd to the bundle and run:"
-Write-Host "  .\\launcher\\grms_launcher.exe" -ForegroundColor Green
+Write-Info "To run:"
+Write-Host "  cd `"$distPath`"" -ForegroundColor Green
+Write-Host "  .\launcher\grms_launcher.exe" -ForegroundColor Green
 
 

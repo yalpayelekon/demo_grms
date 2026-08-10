@@ -22,6 +22,16 @@ Runtime override:
 - `PUT /testcomm/settings/demo-rcu` updates and persists the Demo 101 host/port to `<config>/demo-rcu.json`.
 - A saved config file takes precedence over the environment defaults on next startup.
 
+## Build requirements (Windows)
+
+`testcomm_go` uses `github.com/mattn/go-sqlite3`, which needs **CGO** and a MinGW `gcc`/`g++` on PATH.
+
+If `CC` points at one toolchain (for example MSYS2 UCRT64) while another `gcc` is first on `PATH` (for example Scoop), `go build` can fail with:
+
+`github.com/mattn/go-sqlite3: ... cgo.exe: exit status 2`
+
+Fix by keeping one toolchain consistent — either clear `CC`/`CXX` and use the `gcc` from PATH, or put that compiler’s `bin` directory first on `PATH`. `tools/grms/build-grms-bundle.ps1` does this automatically.
+
 ## Run
 
 ```powershell
