@@ -12,6 +12,7 @@ class RoomRuntimeSnapshot {
     this.rawHasAlarm = false,
     this.hasDoorAlarm = false,
     this.hasDaliLineShortCircuit = false,
+    this.rcuOffline = false,
   });
 
   final RoomData roomData;
@@ -23,6 +24,7 @@ class RoomRuntimeSnapshot {
   final bool rawHasAlarm;
   final bool hasDoorAlarm;
   final bool hasDaliLineShortCircuit;
+  final bool rcuOffline;
 
   factory RoomRuntimeSnapshot.fromSnapshot(
     Map<String, dynamic> snapshot, {
@@ -35,6 +37,9 @@ class RoomRuntimeSnapshot {
     final stale = meta is Map && meta['stale'] is bool
         ? meta['stale'] as bool
         : false;
+    final rcuOffline =
+        snapshot['rcuOffline'] as bool? ??
+        (meta is Map && meta['offline'] is bool ? meta['offline'] as bool : false);
 
     return RoomRuntimeSnapshot(
       roomData: RoomData.fromJson(snapshot),
@@ -47,6 +52,7 @@ class RoomRuntimeSnapshot {
       hasDoorAlarm: snapshot['hasDoorAlarm'] as bool? ?? false,
       hasDaliLineShortCircuit:
           snapshot['hasDaliLineShortCircuit'] as bool? ?? false,
+      rcuOffline: rcuOffline,
     );
   }
 

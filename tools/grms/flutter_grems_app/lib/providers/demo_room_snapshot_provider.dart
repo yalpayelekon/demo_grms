@@ -187,11 +187,9 @@ class RoomSnapshotNotifier
       } else if (decoded is Map) {
         _applySnapshot(Map<String, dynamic>.from(decoded));
       }
-      state = state.copyWith(
-        connected: _sseConnected,
-        targetUnreachable: false,
-        clearMessage: true,
-      );
+      // _applySnapshot already derived reachability from the payload, so only
+      // the transport connection flag is updated here.
+      state = state.copyWith(connected: _sseConnected);
     } catch (_) {
       // Keep existing state while polling/fallback continues.
     }
@@ -337,8 +335,11 @@ class RoomSnapshotNotifier
       runtimeSnapshot: runtimeSnapshot,
       snapshotVersion: state.snapshotVersion + 1,
       source: source.isEmpty ? state.source : source,
-      targetUnreachable: false,
-      clearMessage: true,
+      targetUnreachable: runtimeSnapshot.rcuOffline,
+      message: runtimeSnapshot.rcuOffline
+          ? 'RCU unreachable. Showing last known room state.'
+          : null,
+      clearMessage: !runtimeSnapshot.rcuOffline,
     );
   }
 
@@ -386,6 +387,7 @@ class RoomSnapshotNotifier
           devices,
           hasDaliLineShortCircuit: snapshot.hasDaliLineShortCircuit,
           hvacDetail: snapshot.roomData.hvacDetail,
+          rcuOffline: snapshot.rcuOffline,
         );
   }
 

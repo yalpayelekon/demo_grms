@@ -152,6 +152,7 @@ class RoomLightingRuntimeNotifier
           devices,
           hasDaliLineShortCircuit: snapshot.hasDaliLineShortCircuit,
           hvacDetail: snapshot.roomData.hvacDetail,
+          rcuOffline: snapshot.rcuOffline,
         );
   }
 
@@ -607,6 +608,9 @@ bool _computeEffectiveRoomAlarm(
   RoomRuntimeSnapshot snapshot,
   List<LightingDeviceConfig> configs,
 ) {
+  if (snapshot.rcuOffline) {
+    return true;
+  }
   if (snapshot.hasDoorAlarm) {
     return true;
   }

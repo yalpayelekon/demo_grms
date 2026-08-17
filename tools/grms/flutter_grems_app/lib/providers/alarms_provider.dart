@@ -589,12 +589,90 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
     );
   }
 
+  void syncConnectivityAlarmForRoom(String roomNumber, bool rcuOffline) {
+    final normalizedRoom = roomNumber.trim();
+    if (normalizedRoom.isEmpty) {
+      return;
+    }
+
+    final roomLabel = normalizedRoom.toLowerCase().startsWith('room ')
+        ? normalizedRoom
+        : 'Room $normalizedRoom';
+    final alarmId = _connectivityAlarmId(normalizedRoom);
+    final now = DateTime.now();
+    final updated = List<AlarmData>.from(state.allAlarms);
+    final index = updated.indexWhere((alarm) => alarm.id == alarmId);
+
+    if (rcuOffline) {
+      const detail =
+          'RCU communication lost: the controller is not responding. '
+          'Room data shown is the last known state.';
+      if (index < 0) {
+        updated.insert(
+          0,
+          AlarmData(
+            id: alarmId,
+            room: roomLabel,
+            incidentTime: _formatIncidentTime(now),
+            category: 'RCU',
+            acknowledgement: AlarmAcknowledgement.waitingAck,
+            acknowledgementTime: '',
+            status: AlarmStatus.waitingAck,
+            details: detail,
+          ),
+        );
+      } else {
+        final existing = updated[index];
+        if (existing.status == AlarmStatus.fixed) {
+          updated[index] = existing.copyWith(
+            incidentTime: _formatIncidentTime(now),
+            acknowledgement: AlarmAcknowledgement.waitingAck,
+            acknowledgementTime: '',
+            status: AlarmStatus.waitingAck,
+            details: detail,
+          );
+        } else {
+          updated[index] = existing.copyWith(details: detail);
+        }
+      }
+    } else if (index >= 0) {
+      final existing = updated[index];
+      if (existing.status != AlarmStatus.fixed) {
+        final resolvedAt = _formatIncidentTime(now);
+        updated[index] = existing.copyWith(
+          acknowledgement: AlarmAcknowledgement.acknowledged,
+          acknowledgementTime:
+              existing.acknowledgement == AlarmAcknowledgement.waitingAck
+              ? resolvedAt
+              : existing.acknowledgementTime,
+          status: AlarmStatus.fixed,
+          details: '${existing.details} Resolved (RCU connection restored).',
+        );
+      }
+    }
+
+    final trimmed = _trimAlarms(updated);
+    state = _applyFiltersTo(
+      trimmed,
+      state.categoryFilter,
+      state.ackFilter,
+      state.statusFilter,
+    );
+  }
+
   void syncRuntimeAlarmsForRoom(
     String roomNumber,
     List<LightingDeviceSummary> devices, {
     bool hasDaliLineShortCircuit = false,
     HvacDetail? hvacDetail,
+    bool rcuOffline = false,
   }) {
+    syncConnectivityAlarmForRoom(roomNumber, rcuOffline);
+    if (rcuOffline) {
+      // Device-level payload is stale while the RCU is unreachable, so keep the
+      // last known lighting/HVAC alarms instead of resolving them from cache.
+      return;
+    }
     syncLightingDeviceAlarmsForRoom(
       roomNumber,
       devices,
@@ -640,6 +718,14 @@ class AlarmsNotifier extends Notifier<AlarmsState> {
     return 'RCU alarm source: Device-level lighting gear alarm. '
         'Difference: this is not a line short circuit; device-level fault state '
         'is active$situationSuffix. Device: $deviceLabel.';
+  }
+
+  String _connectivityAlarmId(String roomNumber) {
+    final normalized = roomNumber.trim().toLowerCase().replaceAll(
+      RegExp(r'\s+'),
+      '_',
+    );
+    return 'rcu-offline-$normalized';
   }
 
   String _hvacAlarmId(String roomNumber) {

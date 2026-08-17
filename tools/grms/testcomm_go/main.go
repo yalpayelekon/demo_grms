@@ -55,7 +55,14 @@ type TestCommServer struct {
 
 	snapshotCacheMu sync.RWMutex
 	snapshotCache   map[string]cachedRoomSnapshot
+
+	rcuFailureMu    sync.Mutex
+	rcuFailureSince map[string]time.Time
 }
+
+// A refresh has to keep failing for this long before the room is reported as
+// offline, so a single timed-out poll does not raise a connectivity alarm.
+const rcuOfflineGrace = 8 * time.Second
 
 type cachedRoomSnapshot struct {
 	payload   map[string]interface{}
@@ -78,6 +85,7 @@ func NewTestCommServer(cfg ServerConfig) *TestCommServer {
 		roomClients:      make(map[string]RcuClient),
 		menuStates:       make(map[string]*RcuMenuState),
 		snapshotCache:    make(map[string]cachedRoomSnapshot),
+		rcuFailureSince:  make(map[string]time.Time),
 	}
 
 	if simulatorEnabled {
@@ -1230,22 +1238,28 @@ func (s *TestCommServer) buildSnapshotWithFallback(room string, rcu RcuClient) (
 	}
 
 	if rcu.InitializeAndUpdate() {
+		s.clearRcuFailure(room)
 		snapshot := rcu.Snapshot(s.serviceStore.EventsForRoom(room))
 		withMeta := cloneMap(snapshot)
+		withMeta["rcuOffline"] = false
 		withMeta["_meta"] = map[string]interface{}{
 			"source":    "live",
 			"stale":     false,
+			"offline":   false,
 			"updatedAt": time.Now().UTC().Format(time.RFC3339),
 		}
 		s.cacheSnapshot(room, withMeta)
 		return withMeta, true
 	}
 
+	failingFor, offline := s.noteRcuFailure(room)
+
 	if cached, ok := s.getCachedSnapshot(room); ok {
 		fallback := cloneMap(cached)
 		meta := map[string]interface{}{
 			"source":    "cache",
 			"stale":     true,
+			"offline":   offline,
 			"updatedAt": time.Now().UTC().Format(time.RFC3339),
 		}
 		if cachedMeta, okMeta := cached["_meta"].(map[string]interface{}); okMeta {
@@ -1253,11 +1267,72 @@ func (s *TestCommServer) buildSnapshotWithFallback(room string, rcu RcuClient) (
 				meta["lastLiveAt"] = v
 			}
 		}
+		if offline {
+			meta["offlineForSeconds"] = int(failingFor.Seconds())
+			// The cached body still describes a healthy room, so surface the lost
+			// connection itself as a room alarm instead of replaying stale state.
+			fallback["rcuOffline"] = true
+			fallback["hasAlarm"] = true
+		} else {
+			fallback["rcuOffline"] = false
+		}
 		fallback["_meta"] = meta
-		log.Printf("snapshot.fallback.cache room=%s", room)
+		log.Printf("snapshot.fallback.cache room=%s offline=%t failingForMs=%d", room, offline, failingFor.Milliseconds())
 		return fallback, true
 	}
+
+	// No cache to fall back on (for example the server restarted while the RCU
+	// was already unreachable). Report the room as offline instead of failing,
+	// so the connectivity alarm still reaches the UI.
+	if offline {
+		log.Printf("snapshot.fallback.offline room=%s failingForMs=%d", room, failingFor.Milliseconds())
+		return s.buildOfflineSnapshot(room, failingFor), true
+	}
 	return nil, false
+}
+
+func (s *TestCommServer) buildOfflineSnapshot(room string, failingFor time.Duration) map[string]interface{} {
+	return map[string]interface{}{
+		"number":                  room,
+		"hasAlarm":                true,
+		"rcuOffline":              true,
+		"hasDoorAlarm":            false,
+		"hasDaliLineShortCircuit": false,
+		"lighting":                "Off",
+		"hvac":                    "Off",
+		"dnd":                     "Off",
+		"mur":                     "Finished",
+		"laundry":                 "Finished",
+		"lightingDevices":         []interface{}{},
+		"serviceEvents":           s.serviceStore.EventsForRoom(room),
+		"_meta": map[string]interface{}{
+			"source":            "cache",
+			"stale":             true,
+			"offline":           true,
+			"offlineForSeconds": int(failingFor.Seconds()),
+			"updatedAt":         time.Now().UTC().Format(time.RFC3339),
+		},
+	}
+}
+
+// noteRcuFailure records a failed refresh and reports how long the room has been
+// failing, plus whether that exceeds the offline grace period.
+func (s *TestCommServer) noteRcuFailure(room string) (time.Duration, bool) {
+	s.rcuFailureMu.Lock()
+	defer s.rcuFailureMu.Unlock()
+	since, ok := s.rcuFailureSince[room]
+	if !ok {
+		since = time.Now()
+		s.rcuFailureSince[room] = since
+	}
+	failingFor := time.Since(since)
+	return failingFor, failingFor >= rcuOfflineGrace
+}
+
+func (s *TestCommServer) clearRcuFailure(room string) {
+	s.rcuFailureMu.Lock()
+	defer s.rcuFailureMu.Unlock()
+	delete(s.rcuFailureSince, room)
 }
 
 func (s *TestCommServer) cacheSnapshot(room string, payload map[string]interface{}) {

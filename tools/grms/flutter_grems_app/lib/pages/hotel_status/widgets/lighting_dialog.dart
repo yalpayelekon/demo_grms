@@ -192,6 +192,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
               hasDaliLineShortCircuit:
                   runtimeSnapshot?.hasDaliLineShortCircuit ?? false,
               hvacDetail: runtimeSnapshot?.roomData.hvacDetail,
+              rcuOffline: runtimeSnapshot?.rcuOffline ?? false,
             );
         if (!mounted) {
           return;
@@ -239,6 +240,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
             hasDaliLineShortCircuit:
                 runtimeSnapshot?.hasDaliLineShortCircuit ?? false,
             hvacDetail: runtimeSnapshot?.roomData.hvacDetail,
+            rcuOffline: runtimeSnapshot?.rcuOffline ?? false,
           );
     }
   }
