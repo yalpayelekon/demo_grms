@@ -122,7 +122,9 @@ log "Building Flutter web app..."
   cd "$FLUTTER_APP_PATH"
   flutter pub get
 
-  BUILD_ARGS=(build web --no-pub --base-href / --dart-define=GREMS_DEPLOYMENT_MODE=deployed)
+  # --no-web-resources-cdn bundles CanvasKit locally so the app works on LANs
+  # without internet access.
+  BUILD_ARGS=(build web --no-pub --base-href / --no-web-resources-cdn --dart-define=GREMS_DEPLOYMENT_MODE=deployed)
   if [[ "$CONFIGURATION" == "release" ]]; then
     BUILD_ARGS+=(--release)
   fi
@@ -152,7 +154,13 @@ cat > "$DIST_PATH/start-grms.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-"$SCRIPT_DIR/launcher/grms_launcher"
+export TESTCOMM_DEMO_RCU_HOST="${TESTCOMM_DEMO_RCU_HOST:-192.168.1.114}"
+export TESTCOMM_DEMO_RCU_PORT="${TESTCOMM_DEMO_RCU_PORT:-5556}"
+# Default to port 80 for LAN hostname access (http://hostname.local/).
+# Requires CAP_NET_BIND_SERVICE on backend/testcomm_go (setcap after each rebuild).
+export TESTCOMM_PORT="${TESTCOMM_PORT:-80}"
+export GRMS_OPEN_BROWSER="${GRMS_OPEN_BROWSER:-0}"
+exec "$SCRIPT_DIR/launcher/grms_launcher"
 EOF
 chmod +x "$DIST_PATH/start-grms.sh"
 

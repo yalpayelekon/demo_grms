@@ -4,15 +4,15 @@
     {
       "ui_display_name": "Block A",
       "button_name": "Block A",
-      "x_coordinate": 430,
-      "y_coordinate": 560,
+      "x_coordinate": 523.2793522267207,
+      "y_coordinate": 541.0526315789474,
       "active": true
     },
     {
       "ui_display_name": "Block B",
       "button_name": "Block B",
-      "x_coordinate": 1240,
-      "y_coordinate": 510,
+      "x_coordinate": 1336.1943319838056,
+      "y_coordinate": 486.68016194331983,
       "active": true
     }
   ],
@@ -455,5 +455,30 @@
         "1039"
       ]
     }
-  }
+  },
+  "floorButtonPositions": {
+    "Block A": {
+      "Floor 1": {
+        "x": 1171.9906576521205,
+        "y": 498.07228915662654
+      },
+      "Floor 2": {
+        "x": 1179.2195733147712,
+        "y": 427.9518072289156
+      },
+      "Floor 3": {
+        "x": 1196.5689709051326,
+        "y": 362.16867469879514
+      },
+      "Floor 4": {
+        "x": 1171.9906576521205,
+        "y": 287.7108433734939
+      },
+      "Ground": {
+        "x": 1179.2195733147712,
+        "y": 557.3493975903615
+      }
+    }
+  },
+  "roomButtonPositions": {}
 }

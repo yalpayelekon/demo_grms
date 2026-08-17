@@ -133,9 +133,11 @@ function Build-FlutterGrems {
         throw "flutter pub get failed with exit code $LASTEXITCODE"
     }
 
-    $buildArgs = @("build", "web", "--no-pub", "--release", "--base-href", "/", "--no-wasm-dry-run")
+    # --no-web-resources-cdn bundles CanvasKit locally so the app works on LANs
+    # without internet access.
+    $buildArgs = @("build", "web", "--no-pub", "--release", "--base-href", "/", "--no-wasm-dry-run", "--no-web-resources-cdn")
     if ($Configuration -ieq "debug") {
-        $buildArgs = @("build", "web", "--no-pub", "--base-href", "/", "--no-wasm-dry-run")
+        $buildArgs = @("build", "web", "--no-pub", "--base-href", "/", "--no-wasm-dry-run", "--no-web-resources-cdn")
     }
 
     $buildArgs += @("--dart-define=GREMS_DEPLOYMENT_MODE=deployed")

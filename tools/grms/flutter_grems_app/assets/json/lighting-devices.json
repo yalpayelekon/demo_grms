@@ -1,74 +1,72 @@
 [
     {
         "address": 9,
-        "x": 334,
-        "y": 133,
-        "name": "Yatak Sol"
+        "name": "Yatak Sol",
+        "x": 458.85363984674325,
+        "y": 35.586206896551744,
+        "type": "onboard"
     },
     {
         "address": 10,
-        "x": 905,
-        "y": 233,
-        "name": "Yatak Sag"
+        "name": "Yatak Sag",
+        "x": 804.8766283524906,
+        "y": 35.95402298850576,
+        "type": "onboard"
     },
     {
         "address": 8,
-        "x": 385,
-        "y": 230,
-        "name": "Gizli Ust"
+        "name": "Gizli Ust",
+        "x": 19.37555124360557,
+        "y": 50.358087846180986,
+        "type": "onboard"
     },
     {
         "address": 17,
-        "x": 385,
-        "y": 500,
-        "name": "Masa Yemek"
-    },
-    {
-        "address": 58,
-        "x": 334,
-        "y": 580,
-        "name": "Spot Lambader"
+        "name": "Masa Yemek",
+        "x": 320.7693486590038,
+        "y": 592.544061302682,
+        "type": "onboard"
     },
     {
         "address": 12,
-        "x": 700,
-        "y": 500,
-        "name": "Masa"
+        "name": "Masa",
+        "x": 324.0183908045977,
+        "y": 293.63218390804604,
+        "type": "onboard"
     },
     {
         "address": 15,
-        "x": 1080,
-        "y": 490,
-        "name": "Koridor Sol"
+        "name": "Koridor Sol",
+        "x": 1009.5662835249043,
+        "y": 501.5708812260538,
+        "type": "onboard"
     },
     {
         "address": 16,
-        "x": 1210,
-        "y": 490,
-        "name": "Koridor Sag"
+        "name": "Koridor Sag",
+        "x": 1202.8842911877396,
+        "y": 499.9463601532569,
+        "type": "onboard"
     },
     {
         "address": 11,
-        "x": 1120,
-        "y": 295,
-        "name": "Lavabo"
+        "name": "Lavabo",
+        "x": 1113.535632183908,
+        "y": 33.379310344827594,
+        "type": "onboard"
     },
     {
         "address": 14,
-        "x": 1370,
-        "y": 300,
-        "name": "Klozet"
+        "name": "Klozet",
+        "x": 1279.2367816091955,
+        "y": 56.183908045977034,
+        "type": "onboard"
     },
     {
         "address": 13,
-        "x": 980,
-        "y": 320,
-        "name": "Dus"
-    },
-    {
-        "address": 18,
-        "x": 650,
-        "y": 620,
-        "name": "Dolap"
+        "name": "Dus",
+        "x": 149.62212643678163,
+        "y": 51.40229885057473,
+        "type": "onboard"
     }
 ]
