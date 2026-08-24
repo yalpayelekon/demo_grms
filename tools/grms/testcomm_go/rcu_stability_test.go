@@ -16,17 +16,143 @@ func buildReplyFrames(count int) []byte {
 	return out
 }
 
-func TestRefreshSkippedDuringSceneWindow(t *testing.T) {
+func TestRefreshSkippedDuringCommandWindow(t *testing.T) {
 	r := newRealRcuClient("Demo 101", RcuConfig{Host: "127.0.0.1", Port: 5556})
 	t.Cleanup(r.stopCommandWorker)
 
-	r.lastSceneAt.Store(time.Now().UnixNano())
+	r.deferRefresh(sceneRefreshBlock)
 	outcome, err := r.enqueueRefreshOps(opPriorityNormal)
 	if err != nil {
 		t.Fatalf("enqueueRefreshOps() error: %v", err)
 	}
-	if outcome != "skipped_scene_window" {
-		t.Fatalf("outcome=%q want skipped_scene_window", outcome)
+	if outcome != "skipped_command_window" {
+		t.Fatalf("outcome=%q want skipped_command_window", outcome)
+	}
+}
+
+func TestRefreshCooldownProfiles(t *testing.T) {
+	r := newRealRcuClient("Demo 101", RcuConfig{Host: "127.0.0.1", Port: 5556})
+	t.Cleanup(r.stopCommandWorker)
+
+	r.deferRefresh(sceneRefreshBlock)
+	_, sceneRemaining := r.refreshWindowRemainingMs()
+	if sceneRemaining < 400 || sceneRemaining > sceneRefreshBlock.Milliseconds() {
+		t.Fatalf("scene remainingMs=%d want approximately %d", sceneRemaining, sceneRefreshBlock.Milliseconds())
+	}
+
+	r.deferRefresh(masterLightingRefreshBlock)
+	_, masterRemaining := r.refreshWindowRemainingMs()
+	if masterRemaining < 4900 || masterRemaining > masterLightingRefreshBlock.Milliseconds() {
+		t.Fatalf("master remainingMs=%d want approximately %d", masterRemaining, masterLightingRefreshBlock.Milliseconds())
+	}
+
+	r.deferOutputRefresh(masterLightingOutputRefreshBlock)
+	_, outputRemaining := r.outputRefreshWindowRemainingMs()
+	if outputRemaining < 14900 || outputRemaining > masterLightingOutputRefreshBlock.Milliseconds() {
+		t.Fatalf("master output remainingMs=%d want approximately %d", outputRemaining, masterLightingOutputRefreshBlock.Milliseconds())
+	}
+}
+
+func TestRefreshPathsIssueNoQueriesDuringCommandWindow(t *testing.T) {
+	r := newRealRcuClient("Demo 101", RcuConfig{Host: "127.0.0.1", Port: 5556})
+	t.Cleanup(r.stopCommandWorker)
+	conn := &fakeConn{readBuf: bytes.NewBuffer(buildReplyFrames(24))}
+	r.initialized = true
+	r.conn = conn
+	r.deferRefresh(masterLightingRefreshBlock)
+
+	if outcome, err := r.enqueueRefreshOps(opPriorityNormal); err != nil || outcome != "skipped_command_window" {
+		t.Fatalf("enqueueRefreshOps() outcome=%q error=%v", outcome, err)
+	}
+	if err := r.refreshUnlockedLockedConn(); err != nil {
+		t.Fatalf("refreshUnlockedLockedConn() error: %v", err)
+	}
+	if err := r.refreshDynamicStateLockedConn(); err != nil {
+		t.Fatalf("refreshDynamicStateLockedConn() error: %v", err)
+	}
+	if got := conn.writeBuf.Len(); got != 0 {
+		t.Fatalf("query bytes written during command window=%d want 0", got)
+	}
+}
+
+func TestDecodeMasterLightingCommands(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		last    byte
+		enabled bool
+	}{
+		{name: "on", last: 0x00, enabled: true},
+		{name: "off", last: 0x01, enabled: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			frame := []byte{0x3E, 0x0B, 0x00, 0x03, 0x04, 0x03, 0x01, 0x10, 0x04, 0x05, 0x00, 0x07, 0x00, tc.last}
+			enabled, ok := decodeMasterLightingCommand(frame)
+			if !ok || enabled != tc.enabled {
+				t.Fatalf("decodeMasterLightingCommand() enabled=%t ok=%t", enabled, ok)
+			}
+		})
+	}
+}
+
+func TestMasterLightingCommandEstablishesCooldownAndWritesOnce(t *testing.T) {
+	r := newRealRcuClient("Demo 101", RcuConfig{Host: "127.0.0.1", Port: 5556})
+	t.Cleanup(r.stopCommandWorker)
+	conn := &fakeConn{readBuf: bytes.NewBuffer(nil)}
+	r.conn = conn
+	r.outputs[8] = &outputDeviceState{Address: 8, ActualLevel: 0, TargetLevel: 0, Status: "No"}
+	frame := []byte{0x3E, 0x0B, 0x00, 0x03, 0x04, 0x03, 0x01, 0x10, 0x04, 0x05, 0x00, 0x07, 0x00, 0x00}
+
+	result := r.ExecuteRawCommand(frame, "master-on-test")
+	if triggered, _ := result["triggered"].(bool); !triggered {
+		t.Fatalf("ExecuteRawCommand() result=%v", result)
+	}
+	if got := conn.writeBuf.Len(); got != len(frame) {
+		t.Fatalf("command bytes written=%d want %d", got, len(frame))
+	}
+	if active, remaining := r.refreshWindowRemainingMs(); !active || remaining < 4900 {
+		t.Fatalf("refresh block active=%t remainingMs=%d", active, remaining)
+	}
+	r.mu.RLock()
+	dev := r.outputs[8]
+	actual, target, status, source := dev.ActualLevel, dev.TargetLevel, dev.Status, dev.levelSource
+	r.mu.RUnlock()
+	if actual != 100 || target != 100 || status != "LAMP_ON" || source != "optimistic_master" {
+		t.Fatalf("master-on cache actual=%d target=%d status=%q source=%q", actual, target, status, source)
+	}
+
+	r.refreshBlockedUntil.Store(time.Now().Add(-time.Millisecond).UnixNano())
+	if active, remaining := r.refreshWindowRemainingMs(); active || remaining != 0 {
+		t.Fatalf("expired refresh block active=%t remainingMs=%d", active, remaining)
+	}
+}
+
+func TestMasterLightingCorrelationCoversOnlyFirstPostDeadlineRefresh(t *testing.T) {
+	r := newRealRcuClient("Demo 101", RcuConfig{})
+	t.Cleanup(r.stopCommandWorker)
+
+	r.startMasterLightingCorrelation("master-correlation-test", true, masterLightingRefreshBlock)
+	if r.beginMasterLightingReconciliation() {
+		t.Fatal("correlation began before refresh deadline")
+	}
+
+	r.mu.Lock()
+	r.masterCorrelation.RefreshDeadline = time.Now().Add(-time.Millisecond)
+	r.mu.Unlock()
+	if !r.beginMasterLightingReconciliation() {
+		t.Fatal("correlation did not begin after refresh deadline")
+	}
+	trace, active := r.masterLightingTraceContext()
+	if !active || trace.RequestID != "master-correlation-test" || !trace.Enabled {
+		t.Fatalf("unexpected active trace: %+v active=%t", trace, active)
+	}
+
+	r.finishMasterLightingReconciliation()
+	trace, active = r.masterLightingTraceContext()
+	if active || !trace.FirstRefreshDone {
+		t.Fatalf("trace not completed: %+v active=%t", trace, active)
+	}
+	if r.beginMasterLightingReconciliation() {
+		t.Fatal("correlation began for a second refresh")
 	}
 }
 
@@ -186,4 +312,3 @@ func TestSceneAcceptedModeRemainsDefault(t *testing.T) {
 		t.Fatalf("status=%q want accepted", status)
 	}
 }
-

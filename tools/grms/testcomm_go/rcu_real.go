@@ -25,6 +25,8 @@ const (
 
 const minRefreshInterval = 1 * time.Second
 const sceneRefreshBlock = 500 * time.Millisecond
+const masterLightingRefreshBlock = 5 * time.Second
+const masterLightingOutputRefreshBlock = 15 * time.Second
 const refreshOutputBudgetPerCycle = 4
 
 const (
@@ -215,6 +217,16 @@ type outputDeviceState struct {
 	ApparentEnergy    []int
 	lastPendentLogAt  time.Time
 	lastMastheadDebug time.Time
+	levelSource       string
+}
+
+type masterLightingCorrelation struct {
+	RequestID          string
+	Enabled            bool
+	CommandAt          time.Time
+	RefreshDeadline    time.Time
+	FirstRefreshActive bool
+	FirstRefreshDone   bool
 }
 
 const (
@@ -274,13 +286,16 @@ type realRcuClient struct {
 	gtinName    string
 
 	masterLightingOverride *bool
+	masterCorrelation      masterLightingCorrelation
 
 	isDoorOpened                      bool
 	hasDoorAlarm                      bool
 	isRoomOccupied                    bool
 	isDndActive                       bool
 	isLaundryOn                       bool
+	laundryEventLatched               bool
 	murState                          int
+	murActiveLatched                  bool
 	daliLineStatus                    int
 	daliLineShortCircuit              bool
 	daliLineStatusSupported           bool
@@ -291,8 +306,10 @@ type realRcuClient struct {
 	hvac    hvacState
 	outputs map[int]*outputDeviceState
 
-	lastUpdate  time.Time
-	lastSceneAt atomic.Int64
+	lastUpdate                 time.Time
+	refreshBlockedUntil        atomic.Int64
+	outputRefreshBlockedUntil  atomic.Int64
+	refreshDeferredLoggedUntil atomic.Int64
 
 	syncLoopOnce sync.Once
 
@@ -436,6 +453,21 @@ func (r *realRcuClient) Snapshot(serviceEvents []map[string]interface{}) map[str
 		"hasDaliLineShortCircuit": r.daliLineShortCircuit,
 		"lightingDevices":         r.buildLightingDevicesLocked(),
 		"serviceEvents":           serviceEvents,
+	}
+	if r.masterCorrelation.RequestID != "" && !r.masterCorrelation.FirstRefreshDone {
+		deviceSources := make([]string, 0, len(r.outputs))
+		for _, dev := range r.sortedOutputsLocked() {
+			deviceSources = append(deviceSources, fmt.Sprintf("%d:%s", dev.Address, normalizedLevelSource(dev.levelSource)))
+		}
+		overallSource := "cached_output"
+		if r.masterLightingOverride != nil {
+			overallSource = "optimistic_master"
+		}
+		log.Printf(
+			"rcu.master_lighting.snapshot room=%s requestId=%s elapsedMs=%d enabled=%t lightingSource=%s deviceSources=%s",
+			r.room, r.masterCorrelation.RequestID, time.Since(r.masterCorrelation.CommandAt).Milliseconds(),
+			r.masterCorrelation.Enabled, overallSource, strings.Join(deviceSources, ","),
+		)
 	}
 	if m["mur"] == "Delayed" {
 		m["murDelayedMinutes"] = 15
@@ -760,7 +792,17 @@ func (r *realRcuClient) ExecuteRawCommand(frame []byte, requestID string) map[st
 			}
 			// Treat raw scene-like writes as scene activity so refresh polling
 			// waits for the same cool-down window and avoids read/write races.
-			r.lastSceneAt.Store(time.Now().UnixNano())
+			refreshBlock := sceneRefreshBlock
+			if enabled, isMasterLighting := decodeMasterLightingCommand(frame); isMasterLighting {
+				refreshBlock = masterLightingRefreshBlock
+				r.startMasterLightingCorrelation(requestID, enabled, refreshBlock)
+				r.deferOutputRefresh(masterLightingOutputRefreshBlock)
+				log.Printf(
+					"rcu.master_lighting.command room=%s enabled=%t refreshBlockedMs=%d requestId=%s",
+					r.room, enabled, refreshBlock.Milliseconds(), requestID,
+				)
+			}
+			r.deferRefresh(refreshBlock)
 			r.applyCachedMasterLighting(frame)
 			log.Printf("rcu.raw.trigger sent room=%s frame_hex=% X requestId=%s", r.room, frame, requestID)
 			return map[string]interface{}{
@@ -798,8 +840,15 @@ func (r *realRcuClient) applyCachedMasterLighting(frame []byte) {
 	defer r.mu.Unlock()
 
 	r.masterLightingOverride = boolPtr(enabled)
-	if !enabled {
-		for _, dev := range r.outputs {
+	for _, dev := range r.outputs {
+		dev.levelSource = "optimistic_master"
+	}
+	for _, dev := range r.outputs {
+		if enabled {
+			dev.ActualLevel = 100
+			dev.TargetLevel = 100
+			dev.Status = "LAMP_ON"
+		} else {
 			dev.ActualLevel = 0
 			dev.TargetLevel = 0
 			dev.Status = "No"
@@ -883,7 +932,7 @@ func (r *realRcuClient) doCallLightingScene(scene int) (map[string]interface{}, 
 		})
 		lastLockWaitMs = opRes.lockWaitMs
 		if opRes.err == nil {
-			r.lastSceneAt.Store(time.Now().UnixNano())
+			r.deferRefresh(sceneRefreshBlock)
 			r.applyCachedScene(scene)
 			status := "accepted"
 			resp := map[string]interface{}{
@@ -891,7 +940,7 @@ func (r *realRcuClient) doCallLightingScene(scene int) (map[string]interface{}, 
 				"group":           sceneGroupByte,
 				"triggered":       true,
 				"source":          "live",
-				"refreshDeferred": r.refreshSkipCounter.Load() > 0,
+				"refreshDeferred": r.refreshIsBlocked(),
 				"lockWaitMs":      lastLockWaitMs,
 				"executedAt":      time.Now().UTC().Format(time.RFC3339),
 				"status":          status,
@@ -925,7 +974,7 @@ func (r *realRcuClient) doCallLightingScene(scene int) (map[string]interface{}, 
 			"group":           sceneGroupByte,
 			"triggered":       false,
 			"source":          "live",
-			"refreshDeferred": r.refreshSkipCounter.Load() > 0,
+			"refreshDeferred": r.refreshIsBlocked(),
 			"lockWaitMs":      lastLockWaitMs,
 			"executedAt":      time.Now().UTC().Format(time.RFC3339),
 			"status":          status,
@@ -1233,11 +1282,12 @@ func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
 		logPollingf("rcu.refresh.outcome room=%s outcome=skipped", r.room)
 		return "skipped", nil
 	}
-	if active, remainingMs := r.sceneWindowRemainingMs(); active {
+	if active, remainingMs := r.refreshWindowRemainingMs(); active {
 		r.refreshSkipCounter.Add(1)
-		logPollingf("rcu.refresh.skip room=%s reason=scene_window remainingMs=%d", r.room, remainingMs)
-		logPollingf("rcu.refresh.outcome room=%s outcome=skipped_scene_window", r.room)
-		return "skipped_scene_window", nil
+		r.logRefreshDeferred(remainingMs)
+		logPollingf("rcu.refresh.skip room=%s reason=command_window remainingMs=%d", r.room, remainingMs)
+		logPollingf("rcu.refresh.outcome room=%s outcome=skipped_command_window", r.room)
+		return "skipped_command_window", nil
 	}
 
 	r.mu.RLock()
@@ -1251,6 +1301,11 @@ func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
 		logPollingf("rcu.refresh.skip room=%s reason=min_interval remainingMs=%d", r.room, remainingMs)
 		logPollingf("rcu.refresh.outcome room=%s outcome=skipped", r.room)
 		return "skipped", nil
+	}
+
+	correlationActive := r.beginMasterLightingReconciliation()
+	if correlationActive {
+		defer r.finishMasterLightingReconciliation()
 	}
 
 	if !r.initialized {
@@ -1300,6 +1355,17 @@ func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
 	processed := 0
 	remaining := 0
 	if total > 0 {
+		if active, remainingMs := r.outputRefreshWindowRemainingMs(); active {
+			log.Printf(
+				"rcu.master_lighting.output_refresh.deferred room=%s remainingMs=%d",
+				r.room, remainingMs,
+			)
+			remaining = total
+			partial = true
+			total = 0
+		}
+	}
+	if total > 0 {
 		budget := refreshOutputBudgetPerCycle
 		if budget <= 0 || budget > total {
 			budget = total
@@ -1312,9 +1378,10 @@ func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
 				partial = true
 				break
 			}
-			if active, _ := r.sceneWindowRemainingMs(); active {
+			if active, remainingMs := r.refreshWindowRemainingMs(); active {
 				r.refreshSkipCounter.Add(1)
-				logPollingf("rcu.refresh.preempt room=%s phase=scene_window", r.room)
+				r.logRefreshDeferred(remainingMs)
+				logPollingf("rcu.refresh.preempt room=%s phase=command_window", r.room)
 				partial = true
 				break
 			}
@@ -1372,20 +1439,163 @@ func (r *realRcuClient) enqueueRefreshOps(priority opPriority) (string, error) {
 	return outcome, nil
 }
 
-func (r *realRcuClient) sceneWindowRemainingMs() (bool, int64) {
-	lastSceneNs := r.lastSceneAt.Load()
-	if lastSceneNs <= 0 {
+func (r *realRcuClient) deferRefresh(duration time.Duration) {
+	deadline := time.Now().Add(duration).UnixNano()
+	for {
+		current := r.refreshBlockedUntil.Load()
+		if current >= deadline || r.refreshBlockedUntil.CompareAndSwap(current, deadline) {
+			return
+		}
+	}
+}
+
+func (r *realRcuClient) deferOutputRefresh(duration time.Duration) {
+	deadline := time.Now().Add(duration).UnixNano()
+	for {
+		current := r.outputRefreshBlockedUntil.Load()
+		if current >= deadline || r.outputRefreshBlockedUntil.CompareAndSwap(current, deadline) {
+			return
+		}
+	}
+}
+
+func (r *realRcuClient) outputRefreshWindowRemainingMs() (bool, int64) {
+	deadlineNs := r.outputRefreshBlockedUntil.Load()
+	if deadlineNs <= 0 {
 		return false, 0
 	}
-	elapsed := time.Since(time.Unix(0, lastSceneNs))
-	if elapsed >= sceneRefreshBlock {
+	remaining := time.Until(time.Unix(0, deadlineNs))
+	if remaining <= 0 {
 		return false, 0
 	}
-	remaining := (sceneRefreshBlock - elapsed).Milliseconds()
-	if remaining < 0 {
-		remaining = 0
+	return true, remaining.Milliseconds()
+}
+
+func (r *realRcuClient) startMasterLightingCorrelation(requestID string, enabled bool, block time.Duration) {
+	now := time.Now().UTC()
+	r.mu.Lock()
+	r.masterCorrelation = masterLightingCorrelation{
+		RequestID:       requestID,
+		Enabled:         enabled,
+		CommandAt:       now,
+		RefreshDeadline: now.Add(block),
 	}
-	return true, remaining
+	r.mu.Unlock()
+	log.Printf(
+		"rcu.master_lighting.correlation.start room=%s requestId=%s enabled=%t commandAt=%s refreshDeadline=%s",
+		r.room, requestID, enabled, now.Format(time.RFC3339Nano), now.Add(block).Format(time.RFC3339Nano),
+	)
+}
+
+func (r *realRcuClient) beginMasterLightingReconciliation() bool {
+	now := time.Now().UTC()
+	r.mu.Lock()
+	trace := &r.masterCorrelation
+	if trace.RequestID == "" || trace.FirstRefreshActive || trace.FirstRefreshDone || now.Before(trace.RefreshDeadline) {
+		r.mu.Unlock()
+		return false
+	}
+	trace.FirstRefreshActive = true
+	requestID := trace.RequestID
+	enabled := trace.Enabled
+	elapsed := now.Sub(trace.CommandAt)
+	r.mu.Unlock()
+	log.Printf(
+		"rcu.master_lighting.reconcile.begin room=%s requestId=%s enabled=%t elapsedMs=%d",
+		r.room, requestID, enabled, elapsed.Milliseconds(),
+	)
+	return true
+}
+
+func (r *realRcuClient) finishMasterLightingReconciliation() {
+	now := time.Now().UTC()
+	r.mu.Lock()
+	trace := &r.masterCorrelation
+	requestID := trace.RequestID
+	enabled := trace.Enabled
+	elapsed := now.Sub(trace.CommandAt)
+	trace.FirstRefreshActive = false
+	trace.FirstRefreshDone = true
+	r.mu.Unlock()
+	log.Printf(
+		"rcu.master_lighting.reconcile.end room=%s requestId=%s enabled=%t elapsedMs=%d",
+		r.room, requestID, enabled, elapsed.Milliseconds(),
+	)
+}
+
+func (r *realRcuClient) masterLightingTraceContext() (masterLightingCorrelation, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	trace := r.masterCorrelation
+	return trace, trace.FirstRefreshActive
+}
+
+func classifyRcuQuery(msg []byte) (string, int) {
+	if len(msg) < 6 {
+		return "unknown", -1
+	}
+	address := -1
+	if len(msg) > 6 {
+		address = int(msg[6])
+	}
+	key := fmt.Sprintf("%02X/%02X/%02X", msg[3], msg[4], msg[5])
+	switch key {
+	case "02/05/02":
+		return "occupancy", -1
+	case "02/05/04":
+		return "door", -1
+	case "02/06/00":
+		return "service_summary", -1
+	case "02/04/10":
+		return "dali_line_status", -1
+	case "02/02/10":
+		return "onboard_name", address
+	case "02/02/0C":
+		return "onboard_features", address
+	case "02/02/12":
+		return "output_feature", address
+	case "02/04/0A":
+		return "dali_name", address
+	case "02/04/06":
+		return "dali_ram", address
+	case "02/04/04":
+		return "dali_nvm_power", address
+	case "02/04/0C":
+		return "dali_feature", address
+	default:
+		return "query_" + key, address
+	}
+}
+
+func (r *realRcuClient) refreshIsBlocked() bool {
+	active, _ := r.refreshWindowRemainingMs()
+	return active
+}
+
+func (r *realRcuClient) logRefreshDeferred(remainingMs int64) {
+	deadline := r.refreshBlockedUntil.Load()
+	for {
+		logged := r.refreshDeferredLoggedUntil.Load()
+		if logged == deadline {
+			return
+		}
+		if r.refreshDeferredLoggedUntil.CompareAndSwap(logged, deadline) {
+			log.Printf("rcu.refresh.deferred room=%s reason=command_window remainingMs=%d", r.room, remainingMs)
+			return
+		}
+	}
+}
+
+func (r *realRcuClient) refreshWindowRemainingMs() (bool, int64) {
+	deadlineNs := r.refreshBlockedUntil.Load()
+	if deadlineNs <= 0 {
+		return false, 0
+	}
+	remaining := time.Until(time.Unix(0, deadlineNs))
+	if remaining <= 0 {
+		return false, 0
+	}
+	return true, remaining.Milliseconds()
 }
 
 func (r *realRcuClient) refreshUnlockedLockedConn() error {
@@ -1395,6 +1605,12 @@ func (r *realRcuClient) refreshUnlockedLockedConn() error {
 	if r.hasPendingWrite() {
 		r.refreshSkipCounter.Add(1)
 		logPollingf("rcu.refresh.skip room=%s reason=pending_write", r.room)
+		return nil
+	}
+	if active, remainingMs := r.refreshWindowRemainingMs(); active {
+		r.refreshSkipCounter.Add(1)
+		r.logRefreshDeferred(remainingMs)
+		logPollingf("rcu.refresh.skip room=%s reason=command_window remainingMs=%d", r.room, remainingMs)
 		return nil
 	}
 
@@ -1435,11 +1651,14 @@ func (r *realRcuClient) refreshCoreStateLockedConnWithTimeout(timeout time.Durat
 	if len(dndFrame.Payload) > 0 {
 		r.isDndActive = dndFrame.Payload[0] == 1
 	}
+	previousMurState := r.murState
+	murSummaryRaw := -1
 	if len(dndFrame.Payload) > 1 {
-		r.murState = mapMurStateFromSummaryByte(dndFrame.Payload[1])
+		murSummaryRaw = int(dndFrame.Payload[1])
+		r.applyMurSummaryLocked(dndFrame.Payload[1])
 	}
 	if len(dndFrame.Payload) > 2 {
-		r.isLaundryOn = dndFrame.Payload[2] == 1
+		r.applyLaundrySummaryLocked(dndFrame.Payload[2])
 	}
 	occupied := r.isRoomOccupied
 	doorOpen := r.isDoorOpened
@@ -1448,6 +1667,9 @@ func (r *realRcuClient) refreshCoreStateLockedConnWithTimeout(timeout time.Durat
 	murState := r.murState
 	laundryOn := r.isLaundryOn
 	r.mu.Unlock()
+	if murSummaryRaw >= 0 {
+		logMurStateTransition(r.room, previousMurState, murState, "periodic_core_summary", murSummaryRaw, "Q_dndapp_summary")
+	}
 	logPollingf(
 		"rcu.refresh.core_state room=%s occupied=%t doorOpen=%t hasDoorAlarm=%t dnd=%t mur=%d laundry=%t",
 		r.room,
@@ -1518,17 +1740,31 @@ func (r *realRcuClient) refreshDynamicStateLockedConn() error {
 		logPollingf("rcu.refresh.preempt room=%s phase=dynamic_outputs", r.room)
 		return nil
 	}
+	if active, remainingMs := r.refreshWindowRemainingMs(); active {
+		r.refreshSkipCounter.Add(1)
+		r.logRefreshDeferred(remainingMs)
+		logPollingf("rcu.refresh.skip room=%s reason=command_window remainingMs=%d", r.room, remainingMs)
+		return nil
+	}
 
 	if err := r.refreshCoreStateLockedConn(); err != nil {
 		return err
 	}
 	_ = r.refreshDaliLineStatusLockedConn()
+	if active, remainingMs := r.outputRefreshWindowRemainingMs(); active {
+		log.Printf(
+			"rcu.master_lighting.output_refresh.deferred room=%s remainingMs=%d",
+			r.room, remainingMs,
+		)
+		return nil
+	}
 
 	addresses := r.outputAddresses()
 	for _, addr := range addresses {
-		if active, _ := r.sceneWindowRemainingMs(); active {
+		if active, remainingMs := r.refreshWindowRemainingMs(); active {
 			r.refreshSkipCounter.Add(1)
-			logPollingf("rcu.refresh.preempt room=%s phase=scene_window", r.room)
+			r.logRefreshDeferred(remainingMs)
+			logPollingf("rcu.refresh.preempt room=%s phase=command_window", r.room)
 			break
 		}
 		if r.hasPendingWrite() {
@@ -1856,6 +2092,24 @@ func (r *realRcuClient) refreshOutputLockedConnWithTimeout(address int, timeout 
 	if dev == nil {
 		return fmt.Errorf("missing output %d", address)
 	}
+	trace, diagnostic := r.masterLightingTraceContext()
+	r.mu.RLock()
+	beforeActual, beforeTarget, beforeStatus, beforeSource := dev.ActualLevel, dev.TargetLevel, dev.Status, dev.levelSource
+	r.mu.RUnlock()
+	if diagnostic {
+		defer func() {
+			r.mu.RLock()
+			afterActual, afterTarget, afterStatus, afterSource := dev.ActualLevel, dev.TargetLevel, dev.Status, dev.levelSource
+			r.mu.RUnlock()
+			log.Printf(
+				"rcu.master_lighting.reconcile.output room=%s requestId=%s elapsedMs=%d address=%d beforeActual=%d beforeTarget=%d beforeStatus=%q beforeSource=%s afterActual=%d afterTarget=%d afterStatus=%q afterSource=%s changed=%t",
+				r.room, trace.RequestID, time.Since(trace.CommandAt).Milliseconds(), address,
+				beforeActual, beforeTarget, beforeStatus, normalizedLevelSource(beforeSource),
+				afterActual, afterTarget, afterStatus, normalizedLevelSource(afterSource),
+				beforeActual != afterActual || beforeTarget != afterTarget || beforeStatus != afterStatus,
+			)
+		}()
+	}
 
 	if dev.Onboard {
 		if frame, err := r.sendRequestLockedWithTimeout([]byte{rcuHeader, 0x04, 0x00, 0x02, 0x02, 0x10, byte(address)}, timeout); err == nil {
@@ -1908,6 +2162,7 @@ func (r *realRcuClient) parseOnboardOutputFeatures(dev *outputDeviceState, paylo
 	dev.TargetLevel = rcuLevelToPercent(int(payload[7]))
 	dev.ActualLevel = rcuLevelToPercent(int(payload[8]))
 	dev.Status = gearStatusInfo(int(payload[10]))
+	dev.levelSource = "fresh_rcu"
 	r.mu.Unlock()
 }
 
@@ -1919,7 +2174,15 @@ func (r *realRcuClient) parseDaliRam(dev *outputDeviceState, payload []byte) {
 	dev.ActualLevel = daliLevelToPercent(int(payload[0]))
 	dev.TargetLevel = daliLevelToPercent(int(payload[1]))
 	dev.Status = gearStatusInfo(int(payload[3]))
+	dev.levelSource = "fresh_rcu"
 	r.mu.Unlock()
+}
+
+func normalizedLevelSource(source string) string {
+	if source == "" {
+		return "cached_output"
+	}
+	return source
 }
 
 func (r *realRcuClient) parseDaliNvmPower(dev *outputDeviceState, payload []byte) {
@@ -2166,17 +2429,44 @@ func (r *realRcuClient) sendRequestLockedWithTimeout(msg []byte, timeout time.Du
 	if err := r.conn.SetDeadline(time.Now().Add(timeout)); err != nil {
 		return nil, err
 	}
+	trace, diagnostic := r.masterLightingTraceContext()
+	queryKind, address := classifyRcuQuery(msg)
+	if diagnostic {
+		log.Printf(
+			"rcu.master_lighting.reconcile.query.tx room=%s requestId=%s elapsedMs=%d query=%s address=%d frameHex=% X",
+			r.room, trace.RequestID, time.Since(trace.CommandAt).Milliseconds(), queryKind, address, msg,
+		)
+	}
 	if _, err := r.conn.Write(msg); err != nil {
+		if diagnostic {
+			log.Printf(
+				"rcu.master_lighting.reconcile.query.error room=%s requestId=%s elapsedMs=%d query=%s address=%d error=%v",
+				r.room, trace.RequestID, time.Since(trace.CommandAt).Milliseconds(), queryKind, address, err,
+			)
+		}
 		return nil, err
 	}
 	for {
 		frame, err := readFrame(r.conn)
 		if err != nil {
+			if diagnostic {
+				log.Printf(
+					"rcu.master_lighting.reconcile.query.error room=%s requestId=%s elapsedMs=%d query=%s address=%d error=%v",
+					r.room, trace.RequestID, time.Since(trace.CommandAt).Milliseconds(), queryKind, address, err,
+				)
+			}
 			return nil, err
 		}
 		if frame.CmdType == 4 {
 			r.processEvent(frame)
 			continue
+		}
+		if diagnostic {
+			log.Printf(
+				"rcu.master_lighting.reconcile.query.rx room=%s requestId=%s elapsedMs=%d query=%s address=%d cmdType=%d cmdNo=%d subCmdNo=%d payloadHex=% X",
+				r.room, trace.RequestID, time.Since(trace.CommandAt).Milliseconds(), queryKind, address,
+				frame.CmdType, frame.CmdNo, frame.SubCmdNo, frame.Payload,
+			)
 		}
 		return frame, nil
 	}
@@ -2482,23 +2772,19 @@ func (r *realRcuClient) processEvent(frame *rcuFrame) {
 	case 6: // dnd app
 		switch frame.SubCmdNo {
 		case 0:
-			r.mu.Lock()
-			r.murState = murProgress
-			r.mu.Unlock()
-			log.Printf("rcu.event.decoded room=%s event=mur state=progress", r.room)
+			r.setMurState(murProgress, "async_event", frame.SubCmdNo, eventInfo.Name, frame.Payload)
 		case 1:
-			r.mu.Lock()
-			r.murState = murPassive
-			r.mu.Unlock()
-			log.Printf("rcu.event.decoded room=%s event=mur state=passive", r.room)
+			r.setMurState(murPassive, "async_event", frame.SubCmdNo, eventInfo.Name, frame.Payload)
 		case 2:
 			r.mu.Lock()
 			r.isLaundryOn = true
+			r.laundryEventLatched = true
 			r.mu.Unlock()
 			log.Printf("rcu.event.decoded room=%s event=laundry state=on", r.room)
 		case 3:
 			r.mu.Lock()
 			r.isLaundryOn = false
+			r.laundryEventLatched = false
 			r.mu.Unlock()
 			log.Printf("rcu.event.decoded room=%s event=laundry state=off", r.room)
 		case 4:
@@ -2512,15 +2798,9 @@ func (r *realRcuClient) processEvent(frame *rcuFrame) {
 			r.mu.Unlock()
 			log.Printf("rcu.event.decoded room=%s event=dnd state=off", r.room)
 		case 6:
-			r.mu.Lock()
-			r.murState = murActive
-			r.mu.Unlock()
-			log.Printf("rcu.event.decoded room=%s event=mur state=active", r.room)
+			r.setMurState(murActive, "async_event", frame.SubCmdNo, eventInfo.Name, frame.Payload)
 		case 7:
-			r.mu.Lock()
-			r.murState = murPassive
-			r.mu.Unlock()
-			log.Printf("rcu.event.decoded room=%s event=mur state=passive", r.room)
+			r.setMurState(murPassive, "async_event", frame.SubCmdNo, eventInfo.Name, frame.Payload)
 		}
 	case 7: // modbus hvac
 		switch frame.SubCmdNo {
@@ -2543,6 +2823,44 @@ func (r *realRcuClient) processEvent(frame *rcuFrame) {
 	r.mu.Lock()
 	r.lastUpdate = time.Now().UTC()
 	r.mu.Unlock()
+}
+
+func murStateName(state int) string {
+	switch state {
+	case murActive:
+		return "active"
+	case murProgress:
+		return "progress"
+	default:
+		return "passive"
+	}
+}
+
+func logMurStateTransition(room string, previous, next int, source string, raw int, event string) {
+	if previous == next {
+		return
+	}
+	log.Printf(
+		"rcu.mur.state room=%s previous=%s next=%s changed=true source=%s raw=%d event=%s",
+		room, murStateName(previous), murStateName(next), source, raw, event,
+	)
+}
+
+func (r *realRcuClient) setMurState(next int, source string, raw int, event string, payload []byte) {
+	r.mu.Lock()
+	previous := r.murState
+	r.murState = next
+	if next == murActive {
+		r.murActiveLatched = true
+	} else if next == murPassive {
+		r.murActiveLatched = false
+	}
+	r.mu.Unlock()
+	log.Printf(
+		"rcu.mur.event.raw room=%s source=%s raw=%d event=%s payloadHex=%s",
+		r.room, source, raw, event, strings.ToUpper(hex.EncodeToString(payload)),
+	)
+	logMurStateTransition(r.room, previous, next, source, raw, event)
 }
 
 func mapRcuEvent(cmdNo, subCmdNo int) rcuEventInfo {
@@ -2927,6 +3245,30 @@ func mapMurStateFromSummaryByte(raw byte) int {
 		return murProgress
 	default:
 		return murPassive
+	}
+}
+
+func (r *realRcuClient) applyMurSummaryLocked(raw byte) {
+	summaryMurState := mapMurStateFromSummaryByte(raw)
+	switch summaryMurState {
+	case murActive:
+		r.murState = murActive
+		r.murActiveLatched = true
+	case murPassive:
+		r.murState = murPassive
+		r.murActiveLatched = false
+	case murProgress:
+		if !r.murActiveLatched {
+			r.murState = murProgress
+		}
+	}
+}
+
+func (r *realRcuClient) applyLaundrySummaryLocked(raw byte) {
+	if raw == 1 {
+		r.isLaundryOn = true
+	} else if !r.laundryEventLatched {
+		r.isLaundryOn = false
 	}
 }
 

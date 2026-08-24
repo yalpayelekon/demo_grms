@@ -26,6 +26,11 @@ import '../../../providers/room_alias_provider.dart';
 import '../../../providers/room_runtime_provider.dart';
 import '../../../providers/room_service_provider.dart';
 
+Duration postRawCommandRefreshDelay({required bool masterLighting}) =>
+    masterLighting
+    ? const Duration(milliseconds: 15200)
+    : const Duration(milliseconds: 700);
+
 class LightingDialog extends ConsumerStatefulWidget {
   const LightingDialog({super.key, required this.room});
 
@@ -451,6 +456,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     String? successMessage,
     String? failurePrefix,
     String? requestId,
+    bool masterLighting = false,
     void Function(Map<String, dynamic> response)? onSuccessResponse,
   }) async {
     final api = ref.read(roomControlApiProvider);
@@ -485,14 +491,17 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     }
     // Avoid immediate post-write polling race; schedule a delayed refresh.
     unawaited(
-      Future<void>.delayed(const Duration(milliseconds: 700), () async {
-        if (!mounted) {
-          return;
-        }
-        await ref
-            .read(roomSnapshotProvider(widget.room.number).notifier)
-            .refreshNow();
-      }),
+      Future<void>.delayed(
+        postRawCommandRefreshDelay(masterLighting: masterLighting),
+        () async {
+          if (!mounted) {
+            return;
+          }
+          await ref
+              .read(roomSnapshotProvider(widget.room.number).notifier)
+              .refreshNow();
+        },
+      ),
     );
     return true;
   }
@@ -522,6 +531,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
           : 'Master power disabled.',
       failurePrefix: 'Master power command failed',
       requestId: requestId,
+      masterLighting: true,
     );
     if (!ok) {
       lightingNotifier.failMasterPowerToggle(requestId);

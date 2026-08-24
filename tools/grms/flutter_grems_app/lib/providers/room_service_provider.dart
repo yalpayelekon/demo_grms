@@ -10,6 +10,34 @@ import 'room_service_settings_provider.dart';
 import 'zones_provider.dart';
 import '../utils/timestamped_debug_log.dart';
 
+@visibleForTesting
+String mapSnapshotServiceState(ServiceType serviceType, String rawState) {
+  final normalized = rawState.trim().toLowerCase();
+  if (serviceType == ServiceType.dnd) {
+    return switch (normalized) {
+      'yellow' || 'on' || 'requested' || 'active' => 'On',
+      _ => 'Off',
+    };
+  }
+
+  if (serviceType == ServiceType.mur) {
+    return switch (normalized) {
+      'yellow' || 'active' || 'started' => 'Started',
+      'progress' || 'requested' => 'Requested',
+      'delayed' => 'Delayed',
+      'cancelled' || 'canceled' => 'Canceled',
+      _ => 'Finished',
+    };
+  }
+
+  return switch (normalized) {
+    'yellow' || 'progress' || 'requested' || 'on' || 'active' => 'Requested',
+    'delayed' => 'Delayed',
+    'cancelled' || 'canceled' || 'passive' || 'off' => 'Finished',
+    _ => 'Finished',
+  };
+}
+
 class DemoRoomServiceSyncStatus {
   const DemoRoomServiceSyncStatus({
     this.source = 'live',
@@ -461,30 +489,7 @@ class RoomServiceNotifier extends Notifier<List<RoomServiceEntry>> {
   }
 
   String _mapSnapshotState(ServiceType serviceType, String rawState) {
-    final normalized = rawState.trim().toLowerCase();
-    if (serviceType == ServiceType.dnd) {
-      return switch (normalized) {
-        'yellow' || 'on' || 'requested' || 'active' => 'On',
-        _ => 'Off',
-      };
-    }
-
-    if (serviceType == ServiceType.mur) {
-      return switch (normalized) {
-        'yellow' || 'progress' || 'requested' => 'Requested',
-        'started' => 'Started',
-        'delayed' => 'Delayed',
-        'cancelled' || 'canceled' => 'Canceled',
-        _ => 'Finished',
-      };
-    }
-
-    return switch (normalized) {
-      'yellow' || 'progress' || 'requested' || 'on' || 'active' => 'Requested',
-      'delayed' => 'Delayed',
-      'cancelled' || 'canceled' || 'passive' || 'off' => 'Finished',
-      _ => 'Finished',
-    };
+    return mapSnapshotServiceState(serviceType, rawState);
   }
 
   RoomServiceEntry? _parseBackendServiceEvent(
@@ -623,6 +628,10 @@ class RoomServiceNotifier extends Notifier<List<RoomServiceEntry>> {
     final updated = <RoomServiceEntry>[];
 
     for (final entry in state) {
+      if (entry.roomNumber == _demoRoomNumber) {
+        updated.add(entry);
+        continue;
+      }
       final elapsedSeconds = _elapsedSeconds(entry, now);
       if (elapsedSeconds <= 0) {
         updated.add(entry);
@@ -630,8 +639,7 @@ class RoomServiceNotifier extends Notifier<List<RoomServiceEntry>> {
       }
 
       if (entry.serviceType == ServiceType.mur &&
-          (entry.serviceState == 'Requested' ||
-              entry.serviceState == 'Started') &&
+          entry.serviceState == 'Requested' &&
           elapsedSeconds > safeMurThreshold) {
         transitionCount += 1;
         updated.add(

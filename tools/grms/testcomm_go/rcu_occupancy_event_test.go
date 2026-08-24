@@ -136,3 +136,68 @@ func TestMapMurStateFromSummaryByte(t *testing.T) {
 		})
 	}
 }
+
+func TestMurStateSourcesPreserveRequestedStartedFinishedSequence(t *testing.T) {
+	r := newRealRcuClient("Demo 101", RcuConfig{})
+	t.Cleanup(r.stopCommandWorker)
+
+	r.setMurState(murProgress, "async_event", 0, "Event_dndapp_mur_requested", []byte{0xAA})
+	if got := r.mapMurLocked(); got != "Requested" {
+		t.Fatalf("requested map=%q", got)
+	}
+	r.setMurState(murActive, "async_event", 6, "Event_dndapp_mur_started", []byte{0xBB})
+	if got := r.mapMurLocked(); got != "Yellow" {
+		t.Fatalf("started map=%q", got)
+	}
+	if got := r.mapStatusLocked(); got != "Rented HK" {
+		t.Fatalf("started status=%q", got)
+	}
+	r.setMurState(murPassive, "async_event", 7, "Event_dndapp_mur_finished", []byte{0xCC})
+	if got := r.mapMurLocked(); got != "Off" {
+		t.Fatalf("finished map=%q", got)
+	}
+	if got := r.mapStatusLocked(); got != "Rented Vacant" {
+		t.Fatalf("finished status=%q", got)
+	}
+}
+
+func TestStartedMurIgnoresStaleRequestedSummaryUntilFinished(t *testing.T) {
+	r := newRealRcuClient("Demo 101", RcuConfig{})
+	t.Cleanup(r.stopCommandWorker)
+	r.setMurState(murActive, "async_event", 6, "Event_dndapp_mur_started", nil)
+
+	r.mu.Lock()
+	r.applyMurSummaryLocked(2)
+	gotAfterRequested := r.murState
+	r.applyMurSummaryLocked(0)
+	gotAfterFinished := r.murState
+	r.mu.Unlock()
+
+	if gotAfterRequested != murActive {
+		t.Fatalf("stale requested summary downgraded active MUR to %d", gotAfterRequested)
+	}
+	if gotAfterFinished != murPassive {
+		t.Fatalf("passive summary did not finish MUR: %d", gotAfterFinished)
+	}
+}
+
+func TestLaundryEventIgnoresStaleOffSummaryUntilCanceled(t *testing.T) {
+	r := newRealRcuClient("Demo 101", RcuConfig{})
+	t.Cleanup(r.stopCommandWorker)
+	r.processEvent(&rcuFrame{CmdType: 4, CmdNo: 6, SubCmdNo: 2})
+
+	r.mu.Lock()
+	r.applyLaundrySummaryLocked(0)
+	stillOn := r.isLaundryOn
+	r.mu.Unlock()
+	if !stillOn {
+		t.Fatal("stale off summary cleared event-latched laundry request")
+	}
+
+	r.processEvent(&rcuFrame{CmdType: 4, CmdNo: 6, SubCmdNo: 3})
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.isLaundryOn || r.laundryEventLatched {
+		t.Fatal("laundry cancel event did not clear latched request")
+	}
+}

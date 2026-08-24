@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_grems_app/models/room_models.dart';
+import 'package:flutter_grems_app/models/service_models.dart';
+import 'package:flutter_grems_app/providers/room_service_provider.dart';
 import 'package:flutter_grems_app/widgets/room_card.dart';
 
 void main() {
+  test('live yellow MUR snapshot maps to Started', () {
+    expect(mapSnapshotServiceState(ServiceType.mur, 'Yellow'), 'Started');
+  });
   group('deriveRoomStatus', () {
     test('uses rented housekeeping only while MUR is started', () {
       const occupancy = RoomOccupancy(occupied: false, rented: true);

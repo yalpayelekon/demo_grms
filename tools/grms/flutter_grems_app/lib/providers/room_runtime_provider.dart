@@ -114,7 +114,7 @@ class RoomLightingRuntimeNotifier
     5: {8: 0, 9: 209, 10: 209, 12: 0, 15: 0, 16: 209, 17: 0, 18: 0},
   };
   static const Duration _ackWaitTimeout = Duration(seconds: 3);
-  static const Duration _holdAfterAck = Duration(seconds: 6);
+  static const Duration _holdAfterAck = Duration(seconds: 16);
 
   late final String _roomNumber;
   Timer? _syncTimer;
@@ -586,11 +586,17 @@ RoomData _normalizeRoomRuntimeData(RoomData room) {
     return room;
   }
 
-  final expectedStatus = deriveRoomStatus(
-    currentStatus: room.status,
-    occupancy: occupancy,
-    mur: room.mur,
-  );
+  final expectedStatus = switch ((
+    occupancy.rented,
+    occupancy.occupied,
+    room.mur,
+  )) {
+    (true, _, MurStatus.started) => RoomStatus.rentedHK,
+    (false, _, MurStatus.started) => RoomStatus.unrentedHK,
+    (_, true, _) => RoomStatus.rentedOccupied,
+    (true, false, _) => RoomStatus.rentedVacant,
+    (false, false, _) => RoomStatus.unrentedVacant,
+  };
 
   if (expectedStatus == room.status) {
     return room;
