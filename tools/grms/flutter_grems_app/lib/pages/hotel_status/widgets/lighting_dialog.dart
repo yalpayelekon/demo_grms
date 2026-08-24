@@ -318,6 +318,9 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
   }
 
   Future<void> _refreshHvacFromBackend() async {
+    if (_guardRcuOfflineCommand('HVAC')) {
+      return;
+    }
     setState(() => _loadingHvac = true);
     await ref
         .read(roomSnapshotProvider(widget.room.number).notifier)
@@ -333,6 +336,9 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
   }
 
   Future<void> _saveHvac() async {
+    if (_guardRcuOfflineCommand('HVAC')) {
+      return;
+    }
     setState(() => _savingHvac = true);
     final notifier = ref.read(hotelStatusProvider.notifier);
     final result = await notifier.updateHvac(widget.room.number, {
@@ -401,7 +407,43 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
         widget.room;
   }
 
+  bool _isRcuOffline({required bool watch}) {
+    final snapshot = watch
+        ? ref.watch(roomRuntimeRoomDataProvider(widget.room.number))
+        : ref.read(roomRuntimeRoomDataProvider(widget.room.number));
+    return snapshot?.rcuOffline ?? false;
+  }
+
+  String _rcuOfflineDisabledMessage(String controlName) {
+    return 'RCU is offline — $controlName commands are disabled until the controller reconnects.';
+  }
+
+  Widget _rcuOfflineBanner(String controlName) {
+    return Text(
+      'RCU is offline — $controlName commands are disabled. '
+      'Reconnect the controller before sending commands.',
+      style: TextStyle(
+        fontSize: 12,
+        height: 1.35,
+        color: Colors.orangeAccent.shade100,
+      ),
+    );
+  }
+
+  bool _guardRcuOfflineCommand(String controlName) {
+    if (!_isRcuOffline(watch: false)) {
+      return false;
+    }
+    setState(() {
+      _errorMessage = _rcuOfflineDisabledMessage(controlName);
+    });
+    return true;
+  }
+
   Future<void> _triggerScene(int scene) async {
+    if (_guardRcuOfflineCommand('scene')) {
+      return;
+    }
     if (scene == 6) {
       await _toggleMasterPower();
       return;
@@ -1030,13 +1072,19 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
   }
 
   Widget _buildBlindsControlCard() {
+    final rcuOffline = _isRcuOffline(watch: true);
     final blindsCount = _buildMergedDevices().where(_isBlindDevice).length;
+    final blindsDisabled = rcuOffline || _updatingBlinds;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        border: Border.all(
+          color: rcuOffline
+              ? Colors.orangeAccent.withOpacity(0.55)
+              : Colors.white.withOpacity(0.1),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1049,6 +1097,10 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
               color: Colors.white,
             ),
           ),
+          if (rcuOffline) ...[
+            const SizedBox(height: 8),
+            _rcuOfflineBanner('blinds'),
+          ],
           const SizedBox(height: 8),
           Text(
             blindsCount > 0
@@ -1064,18 +1116,26 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
             children: [
               Expanded(
                 child: FilledButton.tonal(
-                  onPressed: _updatingBlinds
+                  onPressed: blindsDisabled
                       ? null
                       : () => _setBlindsLevel(targetLevel: 100),
+                  style: FilledButton.styleFrom(
+                    disabledForegroundColor: Colors.white.withOpacity(0.35),
+                    disabledBackgroundColor: Colors.white.withOpacity(0.06),
+                  ),
                   child: const Text('Open'),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: FilledButton.tonal(
-                  onPressed: _updatingBlinds
+                  onPressed: blindsDisabled
                       ? null
                       : () => _setBlindsLevel(targetLevel: 0),
+                  style: FilledButton.styleFrom(
+                    disabledForegroundColor: Colors.white.withOpacity(0.35),
+                    disabledBackgroundColor: Colors.white.withOpacity(0.06),
+                  ),
                   child: const Text('Close'),
                 ),
               ),
@@ -1094,6 +1154,9 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
   }
 
   Future<void> _setBlindsLevel({required int targetLevel}) async {
+    if (_guardRcuOfflineCommand('blinds')) {
+      return;
+    }
     setState(() => _updatingBlinds = true);
     final hex = targetLevel > 0
         ? '3E 0B00 030403 0010020500000000'
@@ -1123,6 +1186,9 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     required ServiceType serviceType,
     required String serviceState,
   }) async {
+    if (_guardRcuOfflineCommand('service')) {
+      return;
+    }
     final ok = await _sendRawCommand(
       _serviceCommandHex(serviceType),
       failurePrefix: '${serviceType.label} command failed',
@@ -1140,6 +1206,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
   }
 
   Widget _buildHvacCard(RoomData room) {
+    final rcuOffline = _isRcuOffline(watch: true);
     final detail = room.hvacDetail;
     final running =
         (detail?.onOff ?? (room.hvac == HvacStatus.off ? 0 : 1)) == 1;
@@ -1148,7 +1215,11 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        border: Border.all(
+          color: rcuOffline
+              ? Colors.orangeAccent.withOpacity(0.55)
+              : Colors.white.withOpacity(0.1),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1161,6 +1232,10 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
               color: Colors.white,
             ),
           ),
+          if (rcuOffline) ...[
+            const SizedBox(height: 8),
+            _rcuOfflineBanner('HVAC'),
+          ],
           if (_loadingHvac) ...[
             const SizedBox(height: 8),
             const LinearProgressIndicator(minHeight: 2),
@@ -1203,7 +1278,9 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
               ),
               Switch(
                 value: _isOn,
-                onChanged: (value) => setState(() => _isOn = value),
+                onChanged: rcuOffline
+                    ? null
+                    : (value) => setState(() => _isOn = value),
               ),
             ],
           ),
@@ -1220,7 +1297,9 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
             max: 30,
             divisions: 28,
             label: _setPoint.toStringAsFixed(1),
-            onChanged: (value) => setState(() => _setPoint = value),
+            onChanged: rcuOffline
+                ? null
+                : (value) => setState(() => _setPoint = value),
           ),
           DropdownButtonFormField<int>(
             value: _mode,
@@ -1231,7 +1310,9 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
               DropdownMenuItem(value: 2, child: Text('Fan Only')),
               DropdownMenuItem(value: 3, child: Text('Auto')),
             ],
-            onChanged: (value) => setState(() => _mode = _normalizeMode(value)),
+            onChanged: rcuOffline
+                ? null
+                : (value) => setState(() => _mode = _normalizeMode(value)),
           ),
           const SizedBox(height: 10),
           DropdownButtonFormField<int>(
@@ -1243,19 +1324,25 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
               DropdownMenuItem(value: 3, child: Text('High')),
               DropdownMenuItem(value: 4, child: Text('Auto')),
             ],
-            onChanged: (value) =>
-                setState(() => _fanMode = _normalizeFanMode(value)),
+            onChanged: rcuOffline
+                ? null
+                : (value) =>
+                      setState(() => _fanMode = _normalizeFanMode(value)),
           ),
           const SizedBox(height: 10),
           Row(
             children: [
               OutlinedButton(
-                onPressed: _savingHvac ? null : _refreshHvacFromBackend,
+                onPressed: (rcuOffline || _savingHvac)
+                    ? null
+                    : _refreshHvacFromBackend,
                 child: const Text('Refresh'),
               ),
               const Spacer(),
               ElevatedButton(
-                onPressed: (_savingHvac || !_hasHvacChanges) ? null : _saveHvac,
+                onPressed: (rcuOffline || _savingHvac || !_hasHvacChanges)
+                    ? null
+                    : _saveHvac,
                 child: Text(_savingHvac ? 'Saving...' : 'Save'),
               ),
             ],
@@ -1266,6 +1353,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
   }
 
   Widget _buildServiceCard(RoomData room, List<RoomServiceEntry> entries) {
+    final rcuOffline = _isRcuOffline(watch: true);
     RoomServiceEntry? latest(ServiceType type) {
       for (final entry in entries) {
         if (entry.serviceType == type) return entry;
@@ -1282,7 +1370,11 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        border: Border.all(
+          color: rcuOffline
+              ? Colors.orangeAccent.withOpacity(0.55)
+              : Colors.white.withOpacity(0.1),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1295,6 +1387,10 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
               color: Colors.white,
             ),
           ),
+          if (rcuOffline) ...[
+            const SizedBox(height: 8),
+            _rcuOfflineBanner('service'),
+          ],
           const SizedBox(height: 8),
           Row(
             children: [
@@ -1330,6 +1426,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
             title: 'DND',
             entry: dndEntry,
             fallbackState: room.dnd.label,
+            enabled: !rcuOffline,
           ),
           const SizedBox(height: 8),
           _serviceRow(
@@ -1338,6 +1435,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
             title: 'MUR',
             entry: murEntry,
             fallbackState: room.mur.label,
+            enabled: !rcuOffline,
           ),
           const SizedBox(height: 8),
           _serviceRow(
@@ -1346,6 +1444,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
             title: 'Laundry',
             entry: laundryEntry,
             fallbackState: room.laundry.label,
+            enabled: !rcuOffline,
           ),
         ],
       ),
@@ -1358,6 +1457,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
     required String title,
     required RoomServiceEntry? entry,
     required String fallbackState,
+    bool enabled = true,
   }) {
     final rawState = entry?.serviceState ?? fallbackState;
     final stateText = _displayServiceState(serviceType, rawState);
@@ -1408,12 +1508,16 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
                     ? const Color(0xFFFFC107).withOpacity(0.24)
                     : null,
                 foregroundColor: Colors.white,
+                disabledForegroundColor: Colors.white.withOpacity(0.35),
+                disabledBackgroundColor: Colors.white.withOpacity(0.06),
               ),
-              onPressed: () => _applyServiceAction(
-                roomNumber: roomNumber,
-                serviceType: serviceType,
-                serviceState: onServiceState,
-              ),
+              onPressed: enabled
+                  ? () => _applyServiceAction(
+                      roomNumber: roomNumber,
+                      serviceType: serviceType,
+                      serviceState: onServiceState,
+                    )
+                  : null,
               child: Text(
                 actionLabels.$1,
                 style: const TextStyle(fontSize: 11),
@@ -1430,12 +1534,16 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
                     ? const Color(0xFFFFC107).withOpacity(0.24)
                     : null,
                 foregroundColor: Colors.white,
+                disabledForegroundColor: Colors.white.withOpacity(0.35),
+                disabledBackgroundColor: Colors.white.withOpacity(0.06),
               ),
-              onPressed: () => _applyServiceAction(
-                roomNumber: roomNumber,
-                serviceType: serviceType,
-                serviceState: offServiceState,
-              ),
+              onPressed: enabled
+                  ? () => _applyServiceAction(
+                      roomNumber: roomNumber,
+                      serviceType: serviceType,
+                      serviceState: offServiceState,
+                    )
+                  : null,
               child: Text(
                 actionLabels.$2,
                 style: const TextStyle(fontSize: 11),
@@ -1537,6 +1645,7 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
   }
 
   Widget _buildSceneControlCard() {
+    final rcuOffline = _isRcuOffline(watch: true);
     final scenes = <int, String>{
       1: 'Bright',
       2: 'Dimmed',
@@ -1551,7 +1660,11 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        border: Border.all(
+          color: rcuOffline
+              ? Colors.orangeAccent.withOpacity(0.55)
+              : Colors.white.withOpacity(0.1),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1564,6 +1677,10 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
               color: Colors.white,
             ),
           ),
+          if (rcuOffline) ...[
+            const SizedBox(height: 8),
+            _rcuOfflineBanner('scene'),
+          ],
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -1573,12 +1690,14 @@ class _LightingDialogState extends ConsumerState<LightingDialog> {
               return SizedBox(
                 width: 104,
                 child: FilledButton.tonal(
-                  onPressed: () => _triggerScene(entry.key),
+                  onPressed: rcuOffline ? null : () => _triggerScene(entry.key),
                   style: FilledButton.styleFrom(
                     backgroundColor: isSelected
                         ? const Color(0xFFFFC107).withOpacity(0.28)
                         : null,
                     foregroundColor: Colors.white,
+                    disabledForegroundColor: Colors.white.withOpacity(0.35),
+                    disabledBackgroundColor: Colors.white.withOpacity(0.06),
                   ),
                   child: Text(entry.value),
                 ),
