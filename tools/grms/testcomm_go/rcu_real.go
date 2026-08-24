@@ -324,8 +324,9 @@ type realRcuClient struct {
 	opStop       chan struct{}
 	opStopM      sync.Once
 
-	pendingWrites      atomic.Int32
-	refreshSkipCounter atomic.Int64
+	pendingWrites       atomic.Int32
+	refreshSkipCounter  atomic.Int64
+	lastRoomStatusTrace atomic.Value
 
 	refreshOutputCursor int
 
@@ -435,6 +436,15 @@ func (r *realRcuClient) Snapshot(serviceEvents []map[string]interface{}) map[str
 			murRaw, murNormalized,
 			laundryRaw, laundryNormalized,
 		)
+	}
+	statusTrace := fmt.Sprintf(
+		"murRaw=%s mur=%s murState=%s status=%s occupied=%t rented=true alarm=%t",
+		murRaw, murNormalized, murStateName(r.murState), status, r.isRoomOccupied, r.mapHasAlarmLocked(),
+	)
+	previousStatusTrace, _ := r.lastRoomStatusTrace.Load().(string)
+	if previousStatusTrace != statusTrace {
+		r.lastRoomStatusTrace.Store(statusTrace)
+		log.Printf("rcu.room_status.snapshot room=%s %s", r.room, statusTrace)
 	}
 
 	m := map[string]interface{}{

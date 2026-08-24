@@ -10,7 +10,7 @@ void main() {
     expect(mapSnapshotServiceState(ServiceType.mur, 'Yellow'), 'Started');
   });
   group('deriveRoomStatus', () {
-    test('uses rented housekeeping only while MUR is started', () {
+    test('uses rented housekeeping while MUR is requested or started', () {
       const occupancy = RoomOccupancy(occupied: false, rented: true);
 
       expect(
@@ -27,7 +27,7 @@ void main() {
           occupancy: occupancy,
           mur: MurStatus.requested,
         ),
-        RoomStatus.rentedVacant,
+        RoomStatus.rentedHK,
       );
       expect(
         deriveRoomStatus(
@@ -104,6 +104,41 @@ void main() {
       );
 
       expect(_assetNames(tester), contains(scenario.asset));
+    });
+  }
+
+  for (final mur in <MurStatus>[MurStatus.requested, MurStatus.started]) {
+    testWidgets('$mur keeps rented housekeeping and yellow MUR artwork', (
+      tester,
+    ) async {
+      final room = RoomData(
+        number: 'Demo 101',
+        status: RoomStatus.rentedHK,
+        hasAlarm: false,
+        lightingOn: false,
+        hvac: HvacStatus.off,
+        dnd: DndStatus.off,
+        mur: mur,
+        laundry: LaundryStatus.finished,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SizedBox(width: 120, height: 120, child: RoomCard(room: room)),
+        ),
+      );
+
+      expect(
+        _assetNames(tester),
+        containsAll(<String>[
+          'assets/images/room_status/greenhousekeeping.png',
+          'assets/images/room_status/muryellow.png',
+        ]),
+      );
+      expect(
+        _assetNames(tester),
+        isNot(contains('assets/images/room_status/murDelayed.png')),
+      );
     });
   }
 

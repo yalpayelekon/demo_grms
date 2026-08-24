@@ -147,10 +147,12 @@ class _AppShellState extends ConsumerState<AppShell> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Image.asset(
-                  'assets/images/vanpeelogo.png',
+                  'assets/images/AGK_43_Ver_BW@4x.png',
                   width: sidebarLayout.logoSize,
                   height: sidebarLayout.logoSize,
                   fit: BoxFit.contain,
+                  color: Colors.white,
+                  colorBlendMode: BlendMode.srcIn,
                 ),
               ],
             ),

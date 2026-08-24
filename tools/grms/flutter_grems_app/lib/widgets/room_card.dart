@@ -1,6 +1,35 @@
 import 'package:flutter/material.dart';
 import '../models/room_models.dart';
 
+String roomBackgroundImage(RoomData room) {
+  const basePath = 'assets/images/room_status/';
+  if (room.hasAlarm) {
+    switch (room.status) {
+      case RoomStatus.rentedOccupied:
+        return '${basePath}redadamvaliz.png';
+      case RoomStatus.rentedHK:
+      case RoomStatus.unrentedHK:
+        return '${basePath}redhousekeeping.png';
+      case RoomStatus.rentedVacant:
+        return '${basePath}redvaliz.png';
+      default:
+        return '${basePath}onlyRed.png';
+    }
+  }
+  switch (room.status) {
+    case RoomStatus.rentedOccupied:
+      return '${basePath}greenadamvaliz.png';
+    case RoomStatus.rentedHK:
+      return '${basePath}greenhousekeeping.png';
+    case RoomStatus.rentedVacant:
+      return '${basePath}greenvaliz.png';
+    case RoomStatus.unrentedHK:
+      return '${basePath}whitehousekeeping.png';
+    default:
+      return '${basePath}white.png';
+  }
+}
+
 class RoomCard extends StatelessWidget {
   static const double _cornerRadius = 10;
   static const double _topInset = 6;
@@ -167,34 +196,7 @@ class RoomCard extends StatelessWidget {
   }
 
   String _getBackgroundImage() {
-    const basePath = 'assets/images/room_status/';
-    if (room.hasAlarm) {
-      switch (room.status) {
-        case RoomStatus.rentedOccupied:
-          return '${basePath}redadamvaliz.png';
-        case RoomStatus.rentedHK:
-          return '${basePath}redhousekeeping.png';
-        case RoomStatus.rentedVacant:
-          return '${basePath}redvaliz.png';
-        case RoomStatus.unrentedHK:
-          return '${basePath}redhousekeeping.png';
-        default:
-          return '${basePath}onlyRed.png';
-      }
-    } else {
-      switch (room.status) {
-        case RoomStatus.rentedOccupied:
-          return '${basePath}greenadamvaliz.png';
-        case RoomStatus.rentedHK:
-          return '${basePath}greenhousekeeping.png';
-        case RoomStatus.rentedVacant:
-          return '${basePath}greenvaliz.png';
-        case RoomStatus.unrentedHK:
-          return '${basePath}whitehousekeeping.png';
-        default:
-          return '${basePath}white.png';
-      }
-    }
+    return roomBackgroundImage(room);
   }
 
   String _getLightingIcon() {

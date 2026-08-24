@@ -38,6 +38,7 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
   String? _selectedZoneId;
   String? _selectedFloorId;
   String _roomQuery = '';
+  String? _lastRoomStatusTrace;
 
   final Set<RoomStatus> _activeFilters = {
     RoomStatus.rentedOccupied,
@@ -144,6 +145,31 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
           return matchesStatus && matchesQuery;
         })
         .toList();
+
+    if (mirroredRoomNumber != null) {
+      RoomData? finalRoom;
+      for (final room in visibleRooms) {
+        if (room.number == mirroredRoomNumber) {
+          finalRoom = room;
+          break;
+        }
+      }
+      final overlay = serviceOverlayMap[mirroredRoomNumber];
+      final signature =
+          'target=$mirroredRoomNumber mirrorReady=$mirrorReady '
+          'baseNumber=${mirroredRuntimeRoom?.number} '
+          'baseMur=${mirroredRuntimeRoom?.mur.label} '
+          'baseStatus=${mirroredRuntimeRoom?.status.label} '
+          'overlayMur=${overlay?.mur?.label} '
+          'finalMur=${finalRoom?.mur.label} '
+          'finalStatus=${finalRoom?.status.label} '
+          'alarm=${finalRoom?.hasAlarm} '
+          'asset=${finalRoom == null ? "missing" : roomBackgroundImage(finalRoom)}';
+      if (_lastRoomStatusTrace != signature) {
+        _lastRoomStatusTrace = signature;
+        debugPrint('ROOM_STATUS_TRACE $signature');
+      }
+    }
 
     if (kDebugMode) {
       final overlayHits = visibleRooms

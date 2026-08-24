@@ -325,7 +325,7 @@ RoomStatus deriveRoomStatus({
   required MurStatus mur,
   RoomOccupancy? occupancy,
 }) {
-  if (mur == MurStatus.started) {
+  if (mur == MurStatus.requested || mur == MurStatus.started) {
     final rented =
         occupancy?.rented ??
         switch (currentStatus) {
