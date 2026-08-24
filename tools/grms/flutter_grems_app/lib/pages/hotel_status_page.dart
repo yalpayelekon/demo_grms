@@ -352,7 +352,10 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
                       fontSize: compactControls ? 13 : 14,
                       color: Colors.white60,
                     ),
-                    prefixIcon: Icon(Icons.search, size: compactControls ? 18 : 20),
+                    prefixIcon: Icon(
+                      Icons.search,
+                      size: compactControls ? 18 : 20,
+                    ),
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(
                       vertical: compactControls ? 7 : 8,
@@ -459,9 +462,9 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
   Widget _buildCheckbox(
     String label,
     bool value,
-    ValueChanged<bool?> onChanged,
-    {bool compact = false}
-  ) {
+    ValueChanged<bool?> onChanged, {
+    bool compact = false,
+  }) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -469,7 +472,9 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
           scale: compact ? 0.92 : 1.0,
           child: Checkbox(
             value: value,
-            visualDensity: compact ? VisualDensity.compact : VisualDensity.standard,
+            visualDensity: compact
+                ? VisualDensity.compact
+                : VisualDensity.standard,
             onChanged: onChanged,
           ),
         ),
@@ -608,9 +613,15 @@ class _HotelStatusPageState extends ConsumerState<HotelStatusPage> {
   }
 
   RoomData _applyServiceOverlay(RoomData base, _ServiceOverlayState overlay) {
+    final mur = overlay.mur ?? base.mur;
     return base.copyWith(
+      status: deriveRoomStatus(
+        currentStatus: base.status,
+        occupancy: base.occupancy,
+        mur: mur,
+      ),
       dnd: overlay.dnd ?? base.dnd,
-      mur: overlay.mur ?? base.mur,
+      mur: mur,
       laundry: overlay.laundry ?? base.laundry,
       murDelayedMinutes: overlay.murDelayedMinutes ?? base.murDelayedMinutes,
     );

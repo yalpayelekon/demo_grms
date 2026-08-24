@@ -586,17 +586,11 @@ RoomData _normalizeRoomRuntimeData(RoomData room) {
     return room;
   }
 
-  final expectedStatus = switch ((
-    occupancy.rented,
-    occupancy.occupied,
-    room.mur,
-  )) {
-    (true, _, MurStatus.started) => RoomStatus.rentedHK,
-    (false, _, MurStatus.started) => RoomStatus.unrentedHK,
-    (_, true, _) => RoomStatus.rentedOccupied,
-    (true, false, _) => RoomStatus.rentedVacant,
-    (false, false, _) => RoomStatus.unrentedVacant,
-  };
+  final expectedStatus = deriveRoomStatus(
+    currentStatus: room.status,
+    occupancy: occupancy,
+    mur: room.mur,
+  );
 
   if (expectedStatus == room.status) {
     return room;

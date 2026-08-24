@@ -249,9 +249,13 @@ class RoomData {
       json['laundry'] as String? ?? 'Finished',
     );
     final occupancy = _parseOccupancy(json['occupancy']);
-    final status = occupancy == null
-        ? RoomStatus.fromString(json['status'] as String? ?? 'Unrented Vacant')
-        : _statusFromOccupancy(occupancy, mur);
+    final status = deriveRoomStatus(
+      currentStatus: RoomStatus.fromString(
+        json['status'] as String? ?? 'Unrented Vacant',
+      ),
+      occupancy: occupancy,
+      mur: mur,
+    );
 
     return RoomData(
       number: json['number'] as String? ?? '',
@@ -316,10 +320,24 @@ RoomOccupancy? _parseOccupancy(dynamic raw) {
   return null;
 }
 
-RoomStatus _statusFromOccupancy(RoomOccupancy occupancy, MurStatus mur) {
-  final housekeeping = mur == MurStatus.started;
-  if (housekeeping) {
-    return occupancy.rented ? RoomStatus.rentedHK : RoomStatus.unrentedHK;
+RoomStatus deriveRoomStatus({
+  required RoomStatus currentStatus,
+  required MurStatus mur,
+  RoomOccupancy? occupancy,
+}) {
+  if (mur == MurStatus.started) {
+    final rented =
+        occupancy?.rented ??
+        switch (currentStatus) {
+          RoomStatus.rentedOccupied ||
+          RoomStatus.rentedHK ||
+          RoomStatus.rentedVacant => true,
+          _ => false,
+        };
+    return rented ? RoomStatus.rentedHK : RoomStatus.unrentedHK;
+  }
+  if (occupancy == null) {
+    return currentStatus;
   }
   if (occupancy.occupied) {
     return RoomStatus.rentedOccupied;
